@@ -15,6 +15,8 @@ export interface Tournament {
   status: TournamentStatus;
   /** @nullable */
   maxParticipants?: number | null;
+  /** @nullable */
+  prize?: string | null;
   acceptedCount: number;
   pendingCount: number;
   createdAt: string;

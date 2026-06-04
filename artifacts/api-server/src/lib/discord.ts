@@ -49,17 +49,17 @@ export async function sendApprovalEmbed(
 
   const formData = registration.formData as Record<string, string>;
 
+  const typeLabels: Record<string, string> = { solo: "سولو", duo: "دو", squad: "سكواد" };
+
   const embed = new EmbedBuilder()
-    .setTitle(`تم قبول تسجيل جديد — ${tournament.name}`)
+    .setTitle(`✅ تم قبول تسجيل جديد — ${tournament.name}`)
     .setColor(0x57f287)
-    .setDescription(
-      `**نوع البطولة:** ${tournament.type.toUpperCase()}\n**المستخدم:** <@${registration.discordUserId}> (${registration.discordUsername})`
-    )
+    .setDescription(`<@${registration.discordUserId}>`)
     .setTimestamp();
 
   for (const q of questions) {
-    const value = formData[q.id.toString()] ?? formData[q.label] ?? "—";
-    embed.addFields({ name: q.label, value: String(value), inline: true });
+    const value = formData[`q_${q.id}`] ?? formData[q.id.toString()] ?? formData[q.label] ?? "—";
+    embed.addFields({ name: q.label, value: String(value) || "—", inline: true });
   }
 
   await (channel as any).send({ embeds: [embed] });
@@ -89,28 +89,27 @@ export async function sendRegistrationMessage(tournamentId: number, channelId: s
     .from(registrationsTable)
     .where(sql`${registrationsTable.tournamentId} = ${tournamentId} AND ${registrationsTable.status} = 'approved'`);
   const approvedCount = Number(approvedRow?.count ?? 0);
-  const remainingSeats = t.maxParticipants != null ? t.maxParticipants - approvedCount : null;
 
   const typeLabels: Record<string, string> = { solo: "سولو", duo: "دو", squad: "سكواد" };
+  const participantsValue = t.maxParticipants != null ? `${t.maxParticipants}` : "غير محدود";
+
+  const lines = [
+    `**اسم البطولة:** ${t.name}`,
+    `**النوع:** ${typeLabels[t.type] ?? t.type}`,
+    `**المشاركون:** ${participantsValue}`,
+  ];
+  if (t.prize) lines.push(`**الجائزة:** ${t.prize}`);
 
   const embed = new EmbedBuilder()
     .setTitle(`🏆 ${t.name}`)
     .setColor(0x5865f2)
-    .addFields(
-      { name: "نوع البطولة | Type", value: `${typeLabels[t.type] ?? t.type} (${t.type.toUpperCase()})`, inline: true },
-      {
-        name: "المقاعد المتبقية | Remaining Seats",
-        value: remainingSeats != null ? remainingSeats.toString() : "غير محدود | Unlimited",
-        inline: true,
-      }
-    )
-    .setDescription("اضغط على الزر أدناه للتسجيل في البطولة.\nClick the button below to register for the tournament.")
+    .setDescription(lines.join("\n"))
     .setTimestamp();
 
   const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()
       .setCustomId("register_tournament")
-      .setLabel("🎮 التسجيل في البطولة | Register")
+      .setLabel("🎮 التسجيل في البطولة")
       .setStyle(ButtonStyle.Primary)
   );
 
@@ -176,6 +175,11 @@ async function handleRegistrationButton(interaction: ButtonInteraction) {
       .setLabel(q.label.slice(0, 45))
       .setStyle(TextInputStyle.Short)
       .setRequired(q.required);
+
+    if (q.options && q.options.length > 0 && ["select", "radio", "multiselect"].includes(q.type)) {
+      input.setPlaceholder(q.options.join(" / ").slice(0, 100));
+    }
+
     modal.addComponents(new ActionRowBuilder<TextInputBuilder>().addComponents(input));
   }
 
@@ -229,36 +233,26 @@ async function handleTournamentCommand(interaction: CommandInteraction) {
     return;
   }
 
-  const [approvedRow] = await db
-    .select({ count: count() })
-    .from(registrationsTable)
-    .where(
-      sql`${registrationsTable.tournamentId} = ${activeTournament.id} AND ${registrationsTable.status} = 'approved'`
-    );
-  const approvedCount = Number(approvedRow?.count ?? 0);
-  const remainingSeats =
-    activeTournament.maxParticipants != null ? activeTournament.maxParticipants - approvedCount : null;
-
   const typeLabels: Record<string, string> = { solo: "سولو", duo: "دو", squad: "سكواد" };
+  const participantsValue = activeTournament.maxParticipants != null ? `${activeTournament.maxParticipants}` : "غير محدود";
+
+  const lines = [
+    `**اسم البطولة:** ${activeTournament.name}`,
+    `**النوع:** ${typeLabels[activeTournament.type] ?? activeTournament.type}`,
+    `**المشاركون:** ${participantsValue}`,
+  ];
+  if (activeTournament.prize) lines.push(`**الجائزة:** ${activeTournament.prize}`);
 
   const embed = new EmbedBuilder()
     .setTitle(`🏆 ${activeTournament.name}`)
     .setColor(0x5865f2)
-    .addFields(
-      { name: "نوع البطولة | Type", value: `${typeLabels[activeTournament.type] ?? activeTournament.type} (${activeTournament.type.toUpperCase()})`, inline: true },
-      {
-        name: "المقاعد المتبقية | Remaining Seats",
-        value: remainingSeats != null ? remainingSeats.toString() : "غير محدود | Unlimited",
-        inline: true,
-      }
-    )
-    .setDescription("اضغط على الزر أدناه للتسجيل في البطولة.\nClick the button below to register.")
+    .setDescription(lines.join("\n"))
     .setTimestamp();
 
   const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()
       .setCustomId("register_tournament")
-      .setLabel("🎮 التسجيل في البطولة | Register")
+      .setLabel("🎮 التسجيل في البطولة")
       .setStyle(ButtonStyle.Primary)
   );
 

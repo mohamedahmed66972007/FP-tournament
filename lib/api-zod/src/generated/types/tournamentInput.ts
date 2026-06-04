@@ -13,4 +13,6 @@ export interface TournamentInput {
   type: TournamentInputType;
   /** @nullable */
   maxParticipants?: number | null;
+  /** @nullable */
+  prize?: string | null;
 }

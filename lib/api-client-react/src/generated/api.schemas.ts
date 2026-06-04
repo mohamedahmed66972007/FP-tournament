@@ -37,6 +37,8 @@ export interface Tournament {
   status: TournamentStatus;
   /** @nullable */
   maxParticipants?: number | null;
+  /** @nullable */
+  prize?: string | null;
   acceptedCount: number;
   pendingCount: number;
   createdAt: string;
@@ -57,6 +59,8 @@ export interface TournamentInput {
   type: TournamentInputType;
   /** @nullable */
   maxParticipants?: number | null;
+  /** @nullable */
+  prize?: string | null;
 }
 
 export type TournamentUpdateType = typeof TournamentUpdateType[keyof typeof TournamentUpdateType];
@@ -83,6 +87,8 @@ export interface TournamentUpdate {
   status?: TournamentUpdateStatus;
   /** @nullable */
   maxParticipants?: number | null;
+  /** @nullable */
+  prize?: string | null;
 }
 
 export interface TournamentStats {
@@ -192,8 +198,6 @@ export interface BotConfig {
   announcementChannelId?: string | null;
   /** @nullable */
   guildId?: string | null;
-  /** @nullable */
-  botToken?: string | null;
 }
 
 export interface BotConfigUpdate {
@@ -201,8 +205,6 @@ export interface BotConfigUpdate {
   announcementChannelId?: string | null;
   /** @nullable */
   guildId?: string | null;
-  /** @nullable */
-  botToken?: string | null;
 }
 
 export type ListRegistrationsParams = {

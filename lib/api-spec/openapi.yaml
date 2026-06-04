@@ -404,6 +404,8 @@ components:
           enum: [active, inactive]
         maxParticipants:
           type: ["integer", "null"]
+        prize:
+          type: ["string", "null"]
         acceptedCount:
           type: integer
         pendingCount:
@@ -423,6 +425,8 @@ components:
           enum: [solo, duo, squad]
         maxParticipants:
           type: ["integer", "null"]
+        prize:
+          type: ["string", "null"]
 
     TournamentUpdate:
       type: object
@@ -438,6 +442,8 @@ components:
           enum: [active, inactive]
         maxParticipants:
           type: ["integer", "null"]
+        prize:
+          type: ["string", "null"]
 
     TournamentStats:
       type: object

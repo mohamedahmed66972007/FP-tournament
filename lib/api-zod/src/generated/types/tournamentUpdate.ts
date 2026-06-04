@@ -15,4 +15,6 @@ export interface TournamentUpdate {
   status?: TournamentUpdateStatus;
   /** @nullable */
   maxParticipants?: number | null;
+  /** @nullable */
+  prize?: string | null;
 }

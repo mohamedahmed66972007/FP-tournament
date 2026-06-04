@@ -8,6 +8,7 @@ export const tournamentsTable = pgTable("tournaments", {
   type: text("type", { enum: ["solo", "duo", "squad"] }).notNull(),
   status: text("status", { enum: ["active", "inactive"] }).notNull().default("inactive"),
   maxParticipants: integer("max_participants"),
+  prize: text("prize"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });

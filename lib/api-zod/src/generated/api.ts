@@ -25,6 +25,7 @@ export const ListTournamentsResponseItem = zod.object({
   "type": zod.enum(['solo', 'duo', 'squad']),
   "status": zod.enum(['active', 'inactive']),
   "maxParticipants": zod.number().nullish(),
+  "prize": zod.string().nullish(),
   "acceptedCount": zod.number(),
   "pendingCount": zod.number(),
   "createdAt": zod.string()
@@ -41,7 +42,8 @@ export const ListTournamentsResponse = zod.array(ListTournamentsResponseItem)
 export const CreateTournamentBody = zod.object({
   "name": zod.string().min(1),
   "type": zod.enum(['solo', 'duo', 'squad']),
-  "maxParticipants": zod.number().nullish()
+  "maxParticipants": zod.number().nullish(),
+  "prize": zod.string().nullish()
 })
 
 
@@ -54,6 +56,7 @@ export const GetActiveTournamentResponse = zod.object({
   "type": zod.enum(['solo', 'duo', 'squad']),
   "status": zod.enum(['active', 'inactive']),
   "maxParticipants": zod.number().nullish(),
+  "prize": zod.string().nullish(),
   "acceptedCount": zod.number(),
   "pendingCount": zod.number(),
   "createdAt": zod.string()
@@ -73,6 +76,7 @@ export const GetTournamentResponse = zod.object({
   "type": zod.enum(['solo', 'duo', 'squad']),
   "status": zod.enum(['active', 'inactive']),
   "maxParticipants": zod.number().nullish(),
+  "prize": zod.string().nullish(),
   "acceptedCount": zod.number(),
   "pendingCount": zod.number(),
   "createdAt": zod.string()
@@ -93,7 +97,8 @@ export const UpdateTournamentBody = zod.object({
   "name": zod.string().min(1).optional(),
   "type": zod.enum(['solo', 'duo', 'squad']).optional(),
   "status": zod.enum(['active', 'inactive']).optional(),
-  "maxParticipants": zod.number().nullish()
+  "maxParticipants": zod.number().nullish(),
+  "prize": zod.string().nullish()
 })
 
 export const UpdateTournamentResponse = zod.object({
@@ -102,6 +107,7 @@ export const UpdateTournamentResponse = zod.object({
   "type": zod.enum(['solo', 'duo', 'squad']),
   "status": zod.enum(['active', 'inactive']),
   "maxParticipants": zod.number().nullish(),
+  "prize": zod.string().nullish(),
   "acceptedCount": zod.number(),
   "pendingCount": zod.number(),
   "createdAt": zod.string()
@@ -297,8 +303,7 @@ export const RejectRegistrationResponse = zod.object({
 export const GetBotConfigResponse = zod.object({
   "id": zod.number(),
   "announcementChannelId": zod.string().nullish(),
-  "guildId": zod.string().nullish(),
-  "botToken": zod.string().nullish()
+  "guildId": zod.string().nullish()
 })
 
 
@@ -307,15 +312,13 @@ export const GetBotConfigResponse = zod.object({
  */
 export const UpdateBotConfigBody = zod.object({
   "announcementChannelId": zod.string().nullish(),
-  "guildId": zod.string().nullish(),
-  "botToken": zod.string().nullish()
+  "guildId": zod.string().nullish()
 })
 
 export const UpdateBotConfigResponse = zod.object({
   "id": zod.number(),
   "announcementChannelId": zod.string().nullish(),
-  "guildId": zod.string().nullish(),
-  "botToken": zod.string().nullish()
+  "guildId": zod.string().nullish()
 })
 
 

@@ -38,7 +38,8 @@ const statusLabels: Record<string, string> = {
 const formSchema = z.object({
   name: z.string().min(1, "اسم البطولة مطلوب"),
   type: z.enum(["solo", "duo", "squad"]),
-  maxParticipants: z.string().optional().transform(v => v ? parseInt(v, 10) : null),
+  maxParticipants: z.string().optional().transform(v => v && v.trim() !== "" ? parseInt(v, 10) : null),
+  prize: z.string().optional().transform(v => v && v.trim() !== "" ? v.trim() : null),
 });
 
 export default function TournamentList() {
@@ -87,7 +88,8 @@ export default function TournamentList() {
     defaultValues: {
       name: "",
       type: "solo",
-      maxParticipants: null as any,
+      maxParticipants: "" as any,
+      prize: "",
     },
   });
 
@@ -96,7 +98,8 @@ export default function TournamentList() {
       data: {
         name: values.name,
         type: values.type as TournamentInputType,
-        maxParticipants: values.maxParticipants
+        maxParticipants: values.maxParticipants,
+        prize: values.prize,
       }
     });
   }
@@ -173,7 +176,25 @@ export default function TournamentList() {
                           type="number"
                           placeholder="اتركه فارغاً لعدد غير محدود"
                           {...field}
-                          value={field.value || ""}
+                          value={field.value ?? ""}
+                          onChange={(e) => field.onChange(e.target.value)}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="prize"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>الجائزة (اختياري)</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="مثال: 500 ريال"
+                          {...field}
+                          value={field.value ?? ""}
                         />
                       </FormControl>
                       <FormMessage />

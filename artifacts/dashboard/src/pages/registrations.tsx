@@ -1,11 +1,11 @@
-import { Fragment, useState } from "react";
+import { Fragment, useState, useMemo } from "react";
 import {
   useListRegistrations,
   useApproveRegistration,
   useRejectRegistration,
   getListRegistrationsQueryKey
 } from "@workspace/api-client-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useQueries } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -22,6 +22,32 @@ const statusLabels: Record<string, string> = {
   rejected: "مرفوض",
   pending: "معلق",
 };
+
+function useQuestionMap(tournamentIds: number[]): Record<number, Record<string, string>> {
+  const results = useQueries({
+    queries: tournamentIds.map((tid) => ({
+      queryKey: ["questions", tid],
+      queryFn: async () => {
+        const res = await fetch(`/api/tournaments/${tid}/questions`);
+        if (!res.ok) return [];
+        return res.json() as Promise<Array<{ id: number; label: string }>>;
+      },
+      staleTime: 60_000,
+    })),
+  });
+
+  return useMemo(() => {
+    const map: Record<number, Record<string, string>> = {};
+    tournamentIds.forEach((tid, i) => {
+      const questions: Array<{ id: number; label: string }> = (results[i]?.data as any) ?? [];
+      map[tid] = {};
+      questions.forEach((q) => {
+        map[tid][`q_${q.id}`] = q.label;
+      });
+    });
+    return map;
+  }, [results, tournamentIds]);
+}
 
 export default function Registrations() {
   const { toast } = useToast();
@@ -58,6 +84,14 @@ export default function Registrations() {
       }
     }
   });
+
+  const tournamentIds = useMemo(() => {
+    const ids = new Set<number>();
+    registrations?.forEach(r => ids.add(r.tournamentId));
+    return Array.from(ids);
+  }, [registrations]);
+
+  const questionsByTournament = useQuestionMap(tournamentIds);
 
   const toggleRow = (id: number) => {
     setExpandedRows(prev => ({ ...prev, [id]: !prev[id] }));
@@ -174,16 +208,19 @@ export default function Registrations() {
                       <TableRow className="bg-muted/30">
                         <TableCell colSpan={6} className="p-4 border-t-0">
                           <div className="rounded-md border bg-card p-4">
-                            <h4 className="font-semibold mb-3">إجابات النموذج</h4>
+                            <h4 className="font-semibold mb-3">إجابات المستخدم</h4>
                             <div className="grid gap-4 md:grid-cols-2">
-                              {Object.entries(reg.formData).map(([key, value]) => (
-                                <div key={key}>
-                                  <div className="text-sm font-medium text-muted-foreground">{key}</div>
-                                  <div className="text-sm mt-1">
-                                    {Array.isArray(value) ? value.join("، ") : String(value || "—")}
+                              {Object.entries(reg.formData).map(([key, value]) => {
+                                const label = questionsByTournament[reg.tournamentId]?.[key] ?? key;
+                                return (
+                                  <div key={key}>
+                                    <div className="text-sm font-medium text-muted-foreground">{label}</div>
+                                    <div className="text-sm mt-1">
+                                      {Array.isArray(value) ? value.join("، ") : String(value || "—")}
+                                    </div>
                                   </div>
-                                </div>
-                              ))}
+                                );
+                              })}
                             </div>
                             {reg.rejectionReason && (
                               <div className="mt-4 p-3 bg-destructive/10 text-destructive rounded-md text-sm border border-destructive/20">

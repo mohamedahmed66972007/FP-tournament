@@ -19,7 +19,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { ArrowRight, Plus, Trash2, GripVertical, Pencil, Send } from "lucide-react";
+import { ArrowRight, Plus, Trash2, GripVertical, Pencil } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Checkbox } from "@/components/ui/checkbox";
 import { QuestionInputType } from "@workspace/api-client-react/src/generated/api.schemas";
@@ -48,9 +48,6 @@ export default function TournamentDetail() {
   const queryClient = useQueryClient();
 
   const [editingQuestion, setEditingQuestion] = useState<{ id: number; questionId: number } | null>(null);
-  const [sendMsgOpen, setSendMsgOpen] = useState(false);
-  const [channelId, setChannelId] = useState("");
-  const [isSending, setIsSending] = useState(false);
 
   const { data: tournament, isLoading: isLoadingTournament } = useGetTournament(tournamentId, {
     query: { enabled: !!tournamentId, queryKey: getGetTournamentQueryKey(tournamentId) }
@@ -142,30 +139,6 @@ export default function TournamentDetail() {
     });
   }
 
-  async function handleSendMessage() {
-    if (!channelId.trim()) {
-      toast({ title: "أدخل ID القناة", variant: "destructive" });
-      return;
-    }
-    setIsSending(true);
-    try {
-      const res = await fetch(`/api/tournaments/${tournamentId}/send-registration-message`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ channelId: channelId.trim() }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "فشل إرسال الرسالة");
-      toast({ title: "تم إرسال رسالة التسجيل بنجاح ✅" });
-      setSendMsgOpen(false);
-      setChannelId("");
-    } catch (err: any) {
-      toast({ title: "خطأ", description: err.message, variant: "destructive" });
-    } finally {
-      setIsSending(false);
-    }
-  }
-
   if (isLoadingTournament) {
     return <div className="p-8 text-center text-muted-foreground">جاري تحميل تفاصيل البطولة...</div>;
   }
@@ -184,15 +157,6 @@ export default function TournamentDetail() {
           <h1 className="text-xl sm:text-3xl font-bold tracking-tight truncate">{tournament.name}</h1>
           <p className="text-muted-foreground text-sm">تعديل نموذج التسجيل وأسئلته.</p>
         </div>
-        <Button
-          variant="default"
-          className="flex items-center gap-2"
-          onClick={() => setSendMsgOpen(true)}
-        >
-          <Send className="h-4 w-4" />
-          <span className="hidden sm:inline">إرسال رسالة التسجيل</span>
-          <span className="sm:hidden">إرسال</span>
-        </Button>
       </div>
 
       <div className="grid gap-6 md:grid-cols-2">
@@ -241,7 +205,7 @@ export default function TournamentDetail() {
                         variant="ghost"
                         size="icon"
                         className="text-destructive h-8 w-8"
-                        onClick={() => deleteQuestionMutation.mutate({ id: q.id })}
+                        onClick={() => deleteQuestionMutation.mutate({ id: tournamentId, questionId: q.id })}
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>
@@ -268,7 +232,7 @@ export default function TournamentDetail() {
                     <FormItem>
                       <FormLabel>نص السؤال</FormLabel>
                       <FormControl>
-                        <Input placeholder="مثال: ما هو رتبتك في اللعبة؟" {...field} />
+                        <Input placeholder="اكتب نص السؤال" {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -429,40 +393,6 @@ export default function TournamentDetail() {
         </DialogContent>
       </Dialog>
 
-      {/* Send Registration Message Dialog */}
-      <Dialog open={sendMsgOpen} onOpenChange={setSendMsgOpen}>
-        <DialogContent dir="rtl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Send className="h-5 w-5" />
-              إرسال رسالة التسجيل
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <p className="text-sm text-muted-foreground">
-              سيُرسل البوت رسالة إلى القناة المحددة تحتوي على تفاصيل البطولة وزر التسجيل.
-            </p>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">ID القناة (Channel ID)</label>
-              <Input
-                placeholder="مثال: 987654321098765432"
-                value={channelId}
-                onChange={(e) => setChannelId(e.target.value)}
-              />
-              <p className="text-xs text-muted-foreground">
-                يمكنك الحصول على ID القناة بالضغط عليها بزر يمين واختيار &quot;Copy Channel ID&quot;.
-              </p>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setSendMsgOpen(false)}>إلغاء</Button>
-            <Button onClick={handleSendMessage} disabled={isSending}>
-              <Send className="ml-2 h-4 w-4" />
-              {isSending ? "جاري الإرسال..." : "إرسال"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
