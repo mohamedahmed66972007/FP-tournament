@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams, Link } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -9,8 +9,10 @@ import {
   useCreateQuestion,
   useDeleteQuestion,
   useUpdateQuestion,
+  useUpdateTournament,
   getGetTournamentQueryKey,
-  getListQuestionsQueryKey
+  getListQuestionsQueryKey,
+  getListTournamentsQueryKey,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -19,9 +21,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { ArrowRight, Plus, Trash2, GripVertical, Pencil } from "lucide-react";
+import { ArrowRight, Plus, Trash2, GripVertical, Pencil, Save } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Separator } from "@/components/ui/separator";
 import { QuestionInputType } from "@workspace/api-client-react/src/generated/api.schemas";
 
 const questionTypeLabels: Record<string, string> = {
@@ -31,6 +34,13 @@ const questionTypeLabels: Record<string, string> = {
   multiselect: "اختيار متعدد",
   radio: "اختيار واحد",
 };
+
+const tournamentInfoSchema = z.object({
+  name: z.string().min(1, "اسم البطولة مطلوب"),
+  prize: z.string().optional(),
+  maxParticipants: z.string().optional(),
+});
+type TournamentInfoValues = z.infer<typeof tournamentInfoSchema>;
 
 const questionSchema = z.object({
   label: z.string().min(1, "نص السؤال مطلوب"),
@@ -56,6 +66,46 @@ export default function TournamentDetail() {
   const { data: questions, isLoading: isLoadingQuestions } = useListQuestions(tournamentId, {
     query: { enabled: !!tournamentId, queryKey: getListQuestionsQueryKey(tournamentId) }
   });
+
+  const updateTournamentMutation = useUpdateTournament({
+    mutation: {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getGetTournamentQueryKey(tournamentId) });
+        queryClient.invalidateQueries({ queryKey: getListTournamentsQueryKey() });
+        toast({ title: "تم حفظ بيانات البطولة بنجاح" });
+      },
+      onError: () => {
+        toast({ title: "فشل حفظ بيانات البطولة", variant: "destructive" });
+      }
+    }
+  });
+
+  const infoForm = useForm<TournamentInfoValues>({
+    resolver: zodResolver(tournamentInfoSchema),
+    defaultValues: { name: "", prize: "", maxParticipants: "" },
+  });
+
+  useEffect(() => {
+    if (tournament) {
+      infoForm.reset({
+        name: tournament.name ?? "",
+        prize: tournament.prize ?? "",
+        maxParticipants: tournament.maxParticipants != null ? String(tournament.maxParticipants) : "",
+      });
+    }
+  }, [tournament]);
+
+  function onInfoSubmit(values: TournamentInfoValues) {
+    const maxP = values.maxParticipants?.trim();
+    updateTournamentMutation.mutate({
+      id: tournamentId,
+      data: {
+        name: values.name,
+        prize: values.prize || null,
+        maxParticipants: maxP ? parseInt(maxP, 10) : null,
+      } as any,
+    });
+  }
 
   const createQuestionMutation = useCreateQuestion({
     mutation: {
@@ -155,8 +205,76 @@ export default function TournamentDetail() {
         </Link>
         <div className="flex-1 min-w-0">
           <h1 className="text-xl sm:text-3xl font-bold tracking-tight truncate">{tournament.name}</h1>
-          <p className="text-muted-foreground text-sm">تعديل نموذج التسجيل وأسئلته.</p>
+          <p className="text-muted-foreground text-sm">تعديل بيانات البطولة وأسئلة نموذج التسجيل.</p>
         </div>
+      </div>
+
+      {/* ── Tournament Info Edit ── */}
+      <Card>
+        <CardHeader>
+          <CardTitle>بيانات البطولة</CardTitle>
+          <CardDescription>عدّل اسم البطولة والجائزة والحد الأقصى للمشاركين.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Form {...infoForm}>
+            <form onSubmit={infoForm.handleSubmit(onInfoSubmit)} className="space-y-4">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <FormField
+                  control={infoForm.control}
+                  name="name"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>اسم البطولة</FormLabel>
+                      <FormControl>
+                        <Input placeholder="مثال: بطولة رمضان الكبرى" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={infoForm.control}
+                  name="prize"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>الجائزة (اختياري)</FormLabel>
+                      <FormControl>
+                        <Input placeholder="مثال: 500 ريال أو بطاقة PSN" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={infoForm.control}
+                  name="maxParticipants"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>الحد الأقصى للمشاركين (اختياري)</FormLabel>
+                      <FormControl>
+                        <Input type="number" min={1} placeholder="اتركه فارغاً لعدم التحديد" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+              <div className="flex justify-end pt-2">
+                <Button type="submit" disabled={updateTournamentMutation.isPending}>
+                  <Save className="ml-2 h-4 w-4" />
+                  {updateTournamentMutation.isPending ? "جاري الحفظ..." : "حفظ البيانات"}
+                </Button>
+              </div>
+            </form>
+          </Form>
+        </CardContent>
+      </Card>
+
+      <Separator />
+
+      <div>
+        <h2 className="text-lg font-semibold mb-1">أسئلة نموذج التسجيل</h2>
+        <p className="text-sm text-muted-foreground mb-4">هذا ما سيراه اللاعبون عند التسجيل عبر Discord.</p>
       </div>
 
       <div className="grid gap-6 md:grid-cols-2">
