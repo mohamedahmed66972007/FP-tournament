@@ -46,9 +46,15 @@ interface PendingReg {
   players: Array<PlayerData | null>;
   deviceOptions: string[];
   teamName: string | null;
+  initialInteraction?: ButtonInteraction; // stored to delete the buttons message when done
 }
 
 const pending = new Map<string, PendingReg>();
+
+// Delete an interaction's reply after `ms` milliseconds (silent fail)
+function autoDelete(interaction: ModalSubmitInteraction | ButtonInteraction, ms = 5000) {
+  setTimeout(() => { interaction.deleteReply().catch(() => {}); }, ms);
+}
 
 // ──────────────────────────────────────────────────────────────
 // Custom ID helpers (kept short — Discord limit 100 chars)
@@ -210,7 +216,6 @@ async function handleRegistrationButton(interaction: ButtonInteraction) {
     tournamentType: tournament.type,
     numPlayers,
     players: Array(numPlayers).fill(null),
-    currentDevice: null,
     deviceOptions,
     teamName: null,
   };
@@ -220,7 +225,8 @@ async function handleRegistrationButton(interaction: ButtonInteraction) {
     // Solo — show the player modal directly (Name + ID + Device all in one)
     await interaction.showModal(buildPlayerModal(0, pr));
   } else {
-    // Duo / Squad — show player buttons
+    // Duo / Squad — show player buttons; store interaction to delete it when done
+    pr.initialInteraction = interaction;
     await interaction.reply({
       content: buildStatusMessage(pr),
       components: [...buildPlayerButtons(pr)],
@@ -320,6 +326,7 @@ async function handlePlayerModalSubmit(interaction: ModalSubmitInteraction, play
       content: "✅ تم إرسال طلب تسجيلك بنجاح! سيتم مراجعته قريباً.",
       ephemeral: true,
     });
+    autoDelete(interaction); // disappears after 5 seconds
     return;
   }
 
@@ -339,7 +346,7 @@ async function handlePlayerModalSubmit(interaction: ModalSubmitInteraction, play
       ephemeral: true,
     });
   } else {
-    // Still players remaining — update status with buttons
+    // Still players remaining — show updated status with buttons
     await interaction.reply({
       content: buildStatusMessage(pr),
       components: [...buildPlayerButtons(pr)],
@@ -392,6 +399,7 @@ async function handleTeamNameModalSubmit(interaction: ModalSubmitInteraction) {
     return;
   }
 
+  const initialInt = pr.initialInteraction;
   await saveRegistration(pr, interaction.user.id, interaction.user.tag);
   pending.delete(interaction.user.id);
 
@@ -399,6 +407,10 @@ async function handleTeamNameModalSubmit(interaction: ModalSubmitInteraction) {
     content: "✅ تم إرسال طلب تسجيل فريقك بنجاح! سيتم مراجعته قريباً.",
     ephemeral: true,
   });
+
+  // Delete success message + original buttons message after 5 seconds
+  autoDelete(interaction);
+  if (initialInt) setTimeout(() => { initialInt.deleteReply().catch(() => {}); }, 5000);
 }
 
 // ──────────────────────────────────────────────────────────────
