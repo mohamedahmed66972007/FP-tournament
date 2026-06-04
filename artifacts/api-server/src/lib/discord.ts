@@ -8,6 +8,7 @@ import {
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
+  UserSelectMenuBuilder,
   REST,
   Routes,
   SlashCommandBuilder,
@@ -15,6 +16,7 @@ import {
   type ButtonInteraction,
   type ModalSubmitInteraction,
   type CommandInteraction,
+  type UserSelectMenuInteraction,
 } from "discord.js";
 import { db, tournamentsTable, questionsTable, registrationsTable, botConfigTable } from "@workspace/db";
 import { eq, count, sql } from "drizzle-orm";
@@ -65,10 +67,12 @@ function autoDelete(interaction: ModalSubmitInteraction | ButtonInteraction, ms 
 // tn_{tid}         = team-name button
 // tnm_{tid}        = team-name modal customId
 
-function cidPlayerBtn(idx: number, tid: number)  { return `rp_${idx}_${tid}`; }
-function cidPlayerModal(idx: number, tid: number) { return `pm_${idx}_${tid}`; }
-function cidTeamBtn(tid: number)                  { return `tn_${tid}`; }
-function cidTeamModal(tid: number)                { return `tnm_${tid}`; }
+function cidPlayerBtn(idx: number, tid: number)         { return `rp_${idx}_${tid}`; }
+function cidPlayerModal(idx: number, tid: number)       { return `pm_${idx}_${tid}`; }
+function cidPlayerSelect(idx: number, tid: number)      { return `ps_${idx}_${tid}`; }
+function cidPlayerSelectSkip(idx: number, tid: number)  { return `pss_${idx}_${tid}`; }
+function cidTeamBtn(tid: number)                        { return `tn_${tid}`; }
+function cidTeamModal(tid: number)                      { return `tnm_${tid}`; }
 
 // ──────────────────────────────────────────────────────────────
 // UI builders
@@ -301,19 +305,6 @@ function buildPlayerModal(playerIdx: number, pr: PendingReg, registrantDiscordId
     new ActionRowBuilder<TextInputBuilder>().addComponents(deviceInput),
   ];
 
-  // Discord ID field only for duo/squad (so we can @mention each player in the embed)
-  if (pr.numPlayers > 1) {
-    const discordIdInput = new TextInputBuilder()
-      .setCustomId("player_discord_id")
-      .setLabel("Discord ID (للمنشن في الإعلان)")
-      .setStyle(TextInputStyle.Short)
-      .setRequired(false)
-      .setPlaceholder(playerIdx === 0 ? "يتم التعبئة تلقائياً" : "الصق Discord ID الخاص باللاعب");
-    const prefill = existing?.discordId ?? (playerIdx === 0 ? registrantDiscordId : "");
-    if (prefill) discordIdInput.setValue(prefill);
-    rows.push(new ActionRowBuilder<TextInputBuilder>().addComponents(discordIdInput));
-  }
-
   modal.addComponents(...rows);
   return modal;
 }
@@ -321,42 +312,16 @@ function buildPlayerModal(playerIdx: number, pr: PendingReg, registrantDiscordId
 // ──────────────────────────────────────────────────────────────
 // STEP 5 — Player modal submitted
 // ──────────────────────────────────────────────────────────────
-async function handlePlayerModalSubmit(interaction: ModalSubmitInteraction, playerIdx: number) {
-  const pr = pending.get(interaction.user.id);
-  if (!pr) {
-    await interaction.reply({ content: "انتهت جلسة التسجيل. اضغط زر التسجيل من جديد.", ephemeral: true });
-    return;
-  }
-
-  const name     = interaction.fields.getTextInputValue("player_name");
-  const playerId = interaction.fields.getTextInputValue("player_id");
-  const device   = interaction.fields.getTextInputValue("player_device");
-  let discordId: string | undefined;
-  try { discordId = interaction.fields.getTextInputValue("player_discord_id") || undefined; } catch {}
-
-  pr.players[playerIdx] = { name, playerId, device, discordId };
-
+// ──────────────────────────────────────────────────────────────
+// Shared helper: show status message after a player step
+// ──────────────────────────────────────────────────────────────
+async function showStatusReply(
+  interaction: ModalSubmitInteraction | ButtonInteraction | UserSelectMenuInteraction,
+  pr: PendingReg
+) {
   const allDone = pr.players.every(Boolean);
 
-  if (pr.numPlayers === 1) {
-    // Solo — save immediately
-    if (await checkDuplicate(pr.tournamentId, interaction.user.id)) {
-      await interaction.reply({ content: "لقد قمت بالتسجيل مسبقاً في هذه البطولة.", ephemeral: true });
-      pending.delete(interaction.user.id);
-      return;
-    }
-    await saveRegistration(pr, interaction.user.id, interaction.user.tag);
-    pending.delete(interaction.user.id);
-    await interaction.reply({
-      content: "✅ تم إرسال طلب تسجيلك بنجاح! سيتم مراجعته قريباً.",
-      ephemeral: true,
-    });
-    autoDelete(interaction); // disappears after 5 seconds
-    return;
-  }
-
   if (allDone) {
-    // All players done — show team name button
     await interaction.reply({
       content: buildStatusMessage(pr),
       components: [
@@ -371,13 +336,104 @@ async function handlePlayerModalSubmit(interaction: ModalSubmitInteraction, play
       ephemeral: true,
     });
   } else {
-    // Still players remaining — show updated status with buttons
     await interaction.reply({
       content: buildStatusMessage(pr),
       components: [...buildPlayerButtons(pr)],
       ephemeral: true,
     });
   }
+}
+
+async function handlePlayerModalSubmit(interaction: ModalSubmitInteraction, playerIdx: number) {
+  const pr = pending.get(interaction.user.id);
+  if (!pr) {
+    await interaction.reply({ content: "انتهت جلسة التسجيل. اضغط زر التسجيل من جديد.", ephemeral: true });
+    return;
+  }
+
+  const name     = interaction.fields.getTextInputValue("player_name");
+  const playerId = interaction.fields.getTextInputValue("player_id");
+  const device   = interaction.fields.getTextInputValue("player_device");
+
+  // Player 0 = registrant → auto-fill Discord ID. Others handled via UserSelectMenu after modal.
+  const autoDiscordId = playerIdx === 0 ? interaction.user.id : undefined;
+  pr.players[playerIdx] = { name, playerId, device, discordId: autoDiscordId };
+
+  if (pr.numPlayers === 1) {
+    // Solo — save immediately, Discord ID set in saveRegistration from discordUserId
+    if (await checkDuplicate(pr.tournamentId, interaction.user.id)) {
+      await interaction.reply({ content: "لقد قمت بالتسجيل مسبقاً في هذه البطولة.", ephemeral: true });
+      pending.delete(interaction.user.id);
+      return;
+    }
+    await saveRegistration(pr, interaction.user.id, interaction.user.tag);
+    pending.delete(interaction.user.id);
+    await interaction.reply({ content: "✅ تم إرسال طلب تسجيلك بنجاح! سيتم مراجعته قريباً.", ephemeral: true });
+    autoDelete(interaction);
+    return;
+  }
+
+  if (playerIdx === 0) {
+    // Player 0: Discord ID auto-set → go straight to status
+    await showStatusReply(interaction, pr);
+    return;
+  }
+
+  // Players 1, 2, 3 → show a UserSelectMenu to pick their Discord account
+  const playerLabel = PLAYER_LABELS_AR[playerIdx];
+  await interaction.reply({
+    content: `👤 اختر **اللاعب ${playerLabel}** من أعضاء السيرفر لمنشنته في إعلان القبول:`,
+    components: [
+      new ActionRowBuilder<UserSelectMenuBuilder>().addComponents(
+        new UserSelectMenuBuilder()
+          .setCustomId(cidPlayerSelect(playerIdx, pr.tournamentId))
+          .setPlaceholder(`اختر اللاعب ${playerLabel}`)
+          .setMaxValues(1)
+      ),
+      new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder()
+          .setCustomId(cidPlayerSelectSkip(playerIdx, pr.tournamentId))
+          .setLabel("تخطي بدون منشن")
+          .setStyle(ButtonStyle.Secondary)
+      ),
+    ],
+    ephemeral: true,
+  });
+}
+
+// ──────────────────────────────────────────────────────────────
+// STEP 5b — Player user-select submitted
+// ──────────────────────────────────────────────────────────────
+async function handlePlayerUserSelect(interaction: UserSelectMenuInteraction) {
+  const [, idxStr] = interaction.customId.split("_");
+  const playerIdx = parseInt(idxStr, 10);
+
+  const pr = pending.get(interaction.user.id);
+  if (!pr) {
+    await interaction.reply({ content: "انتهت جلسة التسجيل. اضغط زر التسجيل من جديد.", ephemeral: true });
+    return;
+  }
+
+  // Store the selected Discord user ID against this player slot
+  const selectedId = interaction.values[0];
+  if (pr.players[playerIdx] && selectedId) {
+    pr.players[playerIdx]!.discordId = selectedId;
+  }
+
+  await showStatusReply(interaction, pr);
+}
+
+// ──────────────────────────────────────────────────────────────
+// STEP 5c — Player user-select skip
+// ──────────────────────────────────────────────────────────────
+async function handlePlayerSelectSkip(interaction: ButtonInteraction) {
+  const pr = pending.get(interaction.user.id);
+  if (!pr) {
+    await interaction.reply({ content: "انتهت جلسة التسجيل. اضغط زر التسجيل من جديد.", ephemeral: true });
+    return;
+  }
+  // No Discord ID stored — just proceed
+  await showStatusReply(interaction, pr);
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -660,8 +716,19 @@ export async function initDiscordBot() {
           await handleRegistrationButton(interaction as ButtonInteraction);
         } else if (cid.startsWith("rp_")) {
           await handlePlayerButton(interaction as ButtonInteraction);
+        } else if (cid.startsWith("pss_")) {
+          await handlePlayerSelectSkip(interaction as ButtonInteraction);
         } else if (cid.startsWith("tn_")) {
           await handleTeamNameButton(interaction as ButtonInteraction);
+        }
+        return;
+      }
+
+      // ── User Select Menus ──
+      if (interaction.isUserSelectMenu()) {
+        const cid = (interaction as UserSelectMenuInteraction).customId;
+        if (cid.startsWith("ps_")) {
+          await handlePlayerUserSelect(interaction as UserSelectMenuInteraction);
         }
         return;
       }
