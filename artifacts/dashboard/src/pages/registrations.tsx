@@ -23,6 +23,30 @@ const statusLabels: Record<string, string> = {
   pending: "معلق",
 };
 
+const PLAYER_LABELS = ["الأول", "الثاني", "الثالث", "الرابع"];
+const FORM_KEY_ORDER = [
+  "اسم الفريق",
+  ...PLAYER_LABELS.flatMap(label => [
+    `اسم اللاعب ${label}`,
+    `آيدي اللاعب ${label}`,
+    `جهاز اللاعب ${label}`,
+    `ديسكورد اللاعب ${label}`,
+  ]),
+  "اسم اللاعب",
+  "آيدي اللاعب",
+  "الجهاز",
+  "ديسكورد اللاعب",
+];
+
+function sortedFormEntries(formData: Record<string, unknown>): [string, unknown][] {
+  const ordered = FORM_KEY_ORDER
+    .filter(k => k in formData)
+    .map(k => [k, formData[k]] as [string, unknown]);
+  const orderedKeys = new Set(ordered.map(([k]) => k));
+  const remaining = Object.entries(formData).filter(([k]) => !orderedKeys.has(k));
+  return [...ordered, ...remaining];
+}
+
 function useQuestionMap(tournamentIds: number[]): Record<number, Record<string, string>> {
   const results = useQueries({
     queries: tournamentIds.map((tid) => ({
@@ -210,7 +234,7 @@ export default function Registrations() {
                           <div className="rounded-md border bg-card p-4">
                             <h4 className="font-semibold mb-3">إجابات المستخدم</h4>
                             <div className="grid gap-4 md:grid-cols-2">
-                              {Object.entries(reg.formData).map(([key, value]) => {
+                              {sortedFormEntries(reg.formData as Record<string, unknown>).map(([key, value]) => {
                                 const label = questionsByTournament[reg.tournamentId]?.[key] ?? key;
                                 return (
                                   <div key={key}>

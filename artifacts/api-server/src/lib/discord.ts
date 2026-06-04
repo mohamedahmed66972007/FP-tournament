@@ -37,6 +37,7 @@ interface PlayerData {
   name: string;
   playerId: string;
   device: string;
+  discordId?: string;
 }
 
 interface PendingReg {
@@ -155,18 +156,22 @@ async function saveRegistration(pr: PendingReg, discordUserId: string, discordUs
   if (pr.numPlayers === 1) {
     const p = pr.players[0];
     if (p) {
-      formData["اسم اللاعب"] = p.name;
-      formData["آيدي اللاعب"] = p.playerId;
-      formData["الجهاز"] = p.device;
+      formData["اسم اللاعب"]    = p.name;
+      formData["آيدي اللاعب"]  = p.playerId;
+      formData["الجهاز"]        = p.device;
+      formData["ديسكورد اللاعب"] = discordUserId; // always the registrant
     }
   } else {
     for (let i = 0; i < pr.numPlayers; i++) {
       const p = pr.players[i];
       const label = PLAYER_LABELS_AR[i];
       if (p) {
-        formData[`اسم اللاعب ${label}`] = p.name;
-        formData[`آيدي اللاعب ${label}`] = p.playerId;
-        formData[`جهاز اللاعب ${label}`] = p.device;
+        formData[`اسم اللاعب ${label}`]    = p.name;
+        formData[`آيدي اللاعب ${label}`]   = p.playerId;
+        formData[`جهاز اللاعب ${label}`]   = p.device;
+        // fallback to registrant's Discord ID for player 0
+        const did = p.discordId || (i === 0 ? discordUserId : "");
+        if (did) formData[`ديسكورد اللاعب ${label}`] = did;
       }
     }
     if (pr.teamName) {
@@ -223,7 +228,7 @@ async function handleRegistrationButton(interaction: ButtonInteraction) {
 
   if (numPlayers === 1) {
     // Solo — show the player modal directly (Name + ID + Device all in one)
-    await interaction.showModal(buildPlayerModal(0, pr));
+    await interaction.showModal(buildPlayerModal(0, pr, interaction.user.id));
   } else {
     // Duo / Squad — show player buttons; store interaction to delete it when done
     pr.initialInteraction = interaction;
@@ -249,7 +254,7 @@ async function handlePlayerButton(interaction: ButtonInteraction) {
     return;
   }
 
-  await interaction.showModal(buildPlayerModal(playerIdx, pr));
+  await interaction.showModal(buildPlayerModal(playerIdx, pr, interaction.user.id));
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -257,41 +262,59 @@ async function handlePlayerButton(interaction: ButtonInteraction) {
 // Note: Discord modals only support TextInput, so Device is a
 //       text field with the available options shown as placeholder.
 // ──────────────────────────────────────────────────────────────
-function buildPlayerModal(playerIdx: number, pr: PendingReg): ModalBuilder {
+function buildPlayerModal(playerIdx: number, pr: PendingReg, registrantDiscordId: string): ModalBuilder {
   const playerLabel = pr.numPlayers === 1 ? "اللاعب" : `اللاعب ${PLAYER_LABELS_AR[playerIdx]}`;
   const deviceHint  = pr.deviceOptions.join(" / ");
+  const existing    = pr.players[playerIdx]; // non-null when editing
+
+  const nameInput = new TextInputBuilder()
+    .setCustomId("player_name")
+    .setLabel(`اسم ${playerLabel}`)
+    .setStyle(TextInputStyle.Short)
+    .setRequired(true)
+    .setPlaceholder("أدخل الاسم المستخدم في اللعبة");
+  if (existing?.name) nameInput.setValue(existing.name);
+
+  const idInput = new TextInputBuilder()
+    .setCustomId("player_id")
+    .setLabel(`آيدي ${playerLabel}`)
+    .setStyle(TextInputStyle.Short)
+    .setRequired(true)
+    .setPlaceholder("ID");
+  if (existing?.playerId) idInput.setValue(existing.playerId);
+
+  const deviceInput = new TextInputBuilder()
+    .setCustomId("player_device")
+    .setLabel("الجهاز")
+    .setStyle(TextInputStyle.Short)
+    .setRequired(true)
+    .setPlaceholder(deviceHint.slice(0, 100));
+  if (existing?.device) deviceInput.setValue(existing.device);
 
   const modal = new ModalBuilder()
     .setCustomId(cidPlayerModal(playerIdx, pr.tournamentId))
     .setTitle(`بيانات ${playerLabel}`);
 
-  modal.addComponents(
-    new ActionRowBuilder<TextInputBuilder>().addComponents(
-      new TextInputBuilder()
-        .setCustomId("player_name")
-        .setLabel(`اسم ${playerLabel}`)
-        .setStyle(TextInputStyle.Short)
-        .setRequired(true)
-        .setPlaceholder("أدخل الاسم المستخدم في اللعبة")
-    ),
-    new ActionRowBuilder<TextInputBuilder>().addComponents(
-      new TextInputBuilder()
-        .setCustomId("player_id")
-        .setLabel(`آيدي ${playerLabel}`)
-        .setStyle(TextInputStyle.Short)
-        .setRequired(true)
-        .setPlaceholder("ID")
-    ),
-    new ActionRowBuilder<TextInputBuilder>().addComponents(
-      new TextInputBuilder()
-        .setCustomId("player_device")
-        .setLabel("الجهاز")
-        .setStyle(TextInputStyle.Short)
-        .setRequired(true)
-        .setPlaceholder(deviceHint.slice(0, 100))
-    )
-  );
+  const rows: ActionRowBuilder<TextInputBuilder>[] = [
+    new ActionRowBuilder<TextInputBuilder>().addComponents(nameInput),
+    new ActionRowBuilder<TextInputBuilder>().addComponents(idInput),
+    new ActionRowBuilder<TextInputBuilder>().addComponents(deviceInput),
+  ];
 
+  // Discord ID field only for duo/squad (so we can @mention each player in the embed)
+  if (pr.numPlayers > 1) {
+    const discordIdInput = new TextInputBuilder()
+      .setCustomId("player_discord_id")
+      .setLabel("Discord ID (للمنشن في الإعلان)")
+      .setStyle(TextInputStyle.Short)
+      .setRequired(false)
+      .setPlaceholder(playerIdx === 0 ? "يتم التعبئة تلقائياً" : "الصق Discord ID الخاص باللاعب");
+    const prefill = existing?.discordId ?? (playerIdx === 0 ? registrantDiscordId : "");
+    if (prefill) discordIdInput.setValue(prefill);
+    rows.push(new ActionRowBuilder<TextInputBuilder>().addComponents(discordIdInput));
+  }
+
+  modal.addComponents(...rows);
   return modal;
 }
 
@@ -308,8 +331,10 @@ async function handlePlayerModalSubmit(interaction: ModalSubmitInteraction, play
   const name     = interaction.fields.getTextInputValue("player_name");
   const playerId = interaction.fields.getTextInputValue("player_id");
   const device   = interaction.fields.getTextInputValue("player_device");
+  let discordId: string | undefined;
+  try { discordId = interaction.fields.getTextInputValue("player_discord_id") || undefined; } catch {}
 
-  pr.players[playerIdx] = { name, playerId, device };
+  pr.players[playerIdx] = { name, playerId, device, discordId };
 
   const allDone = pr.players.every(Boolean);
 
@@ -439,22 +464,26 @@ export async function sendApprovalEmbed(
     )
     .setTimestamp();
 
-  // Format: group each player's data as "الاسم#الآيدي" + device on next line
+  // Format: group each player's data as "@mention الاسم#الآيدي" + device on next line
   if (formData["اسم اللاعب"]) {
-    // Solo
-    const name   = formData["اسم اللاعب"]   || "—";
-    const id     = formData["آيدي اللاعب"]   || "—";
-    const device = formData["الجهاز"]        || "—";
-    embed.addFields({ name: "اللاعب", value: `${name}#${id}\n${device}`, inline: false });
+    // Solo — registrant is always the player
+    const name    = formData["اسم اللاعب"]    || "—";
+    const id      = formData["آيدي اللاعب"]   || "—";
+    const device  = formData["الجهاز"]         || "—";
+    const did     = formData["ديسكورد اللاعب"] || registration.discordUserId;
+    const mention = did ? `<@${did}> ` : "";
+    embed.addFields({ name: "اللاعب", value: `${mention}${name}#${id}\n${device}`, inline: false });
   } else {
     // Duo / Squad — iterate players in order
     for (let i = 0; i < PLAYER_LABELS_AR.length; i++) {
-      const label = PLAYER_LABELS_AR[i];
+      const label  = PLAYER_LABELS_AR[i];
       const name   = formData[`اسم اللاعب ${label}`];
       if (!name) break; // no more players
-      const id     = formData[`آيدي اللاعب ${label}`] || "—";
-      const device = formData[`جهاز اللاعب ${label}`] || "—";
-      embed.addFields({ name: `اللاعب ${label}`, value: `${name}#${id}\n${device}`, inline: true });
+      const id      = formData[`آيدي اللاعب ${label}`]   || "—";
+      const device  = formData[`جهاز اللاعب ${label}`]   || "—";
+      const did     = formData[`ديسكورد اللاعب ${label}`];
+      const mention = did ? `<@${did}> ` : "";
+      embed.addFields({ name: `اللاعب ${label}`, value: `${mention}${name}#${id}\n${device}`, inline: true });
     }
     if (formData["اسم الفريق"]) {
       embed.addFields({ name: "اسم الفريق", value: formData["اسم الفريق"], inline: false });
