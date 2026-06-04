@@ -274,7 +274,7 @@ function buildPlayerModal(playerIdx: number, pr: PendingReg): ModalBuilder {
         .setLabel(`آيدي ${playerLabel}`)
         .setStyle(TextInputStyle.Short)
         .setRequired(true)
-        .setPlaceholder("أدخل الآيدي أو كود اللاعب")
+        .setPlaceholder("ID")
     ),
     new ActionRowBuilder<TextInputBuilder>().addComponents(
       new TextInputBuilder()
