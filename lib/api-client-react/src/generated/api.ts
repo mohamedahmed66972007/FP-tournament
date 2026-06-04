@@ -1102,6 +1102,76 @@ export function useGetRegistration<TData = Awaited<ReturnType<typeof getRegistra
 
 
 
+export const getDeleteRegistrationUrl = (id: number,) => {
+
+
+
+
+  return `/api/registrations/${id}`
+}
+
+/**
+ * @summary Delete a registration
+ */
+export const deleteRegistration = async (id: number, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getDeleteRegistrationUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getDeleteRegistrationMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteRegistration>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteRegistration>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['deleteRegistration'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteRegistration>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  deleteRegistration(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteRegistrationMutationResult = NonNullable<Awaited<ReturnType<typeof deleteRegistration>>>
+
+    export type DeleteRegistrationMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Delete a registration
+ */
+export const useDeleteRegistration = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteRegistration>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteRegistration>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getDeleteRegistrationMutationOptions(options));
+    }
+
 export const getApproveRegistrationUrl = (id: number,) => {
 
 

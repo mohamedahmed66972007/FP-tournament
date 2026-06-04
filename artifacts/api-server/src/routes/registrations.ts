@@ -11,6 +11,7 @@ import {
   RejectRegistrationParams,
   RejectRegistrationBody,
   RejectRegistrationResponse,
+  DeleteRegistrationParams,
 } from "@workspace/api-zod";
 import { sendApprovalEmbed, sendRejectionDM } from "../lib/discord";
 import { logger } from "../lib/logger";
@@ -166,6 +167,27 @@ router.patch("/registrations/:id/reject", async (req, res): Promise<void> => {
   }
 
   res.json(RejectRegistrationResponse.parse(mapReg(updated)));
+});
+
+router.delete("/registrations/:id", async (req, res): Promise<void> => {
+  const params = DeleteRegistrationParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+
+  const [existing] = await db
+    .select()
+    .from(registrationsTable)
+    .where(eq(registrationsTable.id, params.data.id));
+
+  if (!existing) {
+    res.status(404).json({ error: "Registration not found" });
+    return;
+  }
+
+  await db.delete(registrationsTable).where(eq(registrationsTable.id, params.data.id));
+  res.status(204).send();
 });
 
 export default router;

@@ -3,6 +3,7 @@ import {
   useListRegistrations,
   useApproveRegistration,
   useRejectRegistration,
+  useDeleteRegistration,
   getListRegistrationsQueryKey
 } from "@workspace/api-client-react";
 import { useQueryClient, useQueries } from "@tanstack/react-query";
@@ -12,7 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { CheckCircle2, XCircle, ChevronDown, ChevronUp } from "lucide-react";
+import { CheckCircle2, XCircle, ChevronDown, ChevronUp, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { Textarea } from "@/components/ui/textarea";
@@ -85,6 +86,12 @@ export default function Registrations() {
     reason: string;
   }>({ isOpen: false, regId: null, reason: "" });
 
+  const [deleteDialogState, setDeleteDialogState] = useState<{
+    isOpen: boolean;
+    regId: number | null;
+    username: string;
+  }>({ isOpen: false, regId: null, username: "" });
+
   const { data: registrations, isLoading } = useListRegistrations(
     statusFilter !== "all" ? { query: { status: statusFilter as any } } : undefined,
     { query: { queryKey: getListRegistrationsQueryKey(statusFilter !== "all" ? { status: statusFilter as any } : undefined) } }
@@ -105,6 +112,16 @@ export default function Registrations() {
         queryClient.invalidateQueries({ queryKey: getListRegistrationsQueryKey() });
         setRejectDialogState({ isOpen: false, regId: null, reason: "" });
         toast({ title: "تم رفض التسجيل" });
+      }
+    }
+  });
+
+  const deleteMutation = useDeleteRegistration({
+    mutation: {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getListRegistrationsQueryKey() });
+        setDeleteDialogState({ isOpen: false, regId: null, username: "" });
+        toast({ title: "تم حذف التسجيل" });
       }
     }
   });
@@ -203,29 +220,40 @@ export default function Registrations() {
                       <TableCell>{getStatusBadge(reg.status)}</TableCell>
                       <TableCell>{format(new Date(reg.createdAt), "dd/MM/yyyy HH:mm")}</TableCell>
                       <TableCell className="text-left">
-                        {reg.status === "pending" && (
-                          <div className="flex justify-end gap-2">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="text-green-500 hover:text-green-600 hover:bg-green-500/10"
-                              onClick={() => approveMutation.mutate({ id: reg.id })}
-                              disabled={approveMutation.isPending}
-                              data-testid={`btn-approve-${reg.id}`}
-                            >
-                              <CheckCircle2 className="h-4 w-4 ml-1" /> قبول
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                              onClick={() => setRejectDialogState({ isOpen: true, regId: reg.id, reason: "" })}
-                              data-testid={`btn-reject-${reg.id}`}
-                            >
-                              <XCircle className="h-4 w-4 ml-1" /> رفض
-                            </Button>
-                          </div>
-                        )}
+                        <div className="flex justify-end gap-2">
+                          {reg.status === "pending" && (
+                            <>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="text-green-500 hover:text-green-600 hover:bg-green-500/10"
+                                onClick={() => approveMutation.mutate({ id: reg.id })}
+                                disabled={approveMutation.isPending}
+                                data-testid={`btn-approve-${reg.id}`}
+                              >
+                                <CheckCircle2 className="h-4 w-4 ml-1" /> قبول
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                                onClick={() => setRejectDialogState({ isOpen: true, regId: reg.id, reason: "" })}
+                                data-testid={`btn-reject-${reg.id}`}
+                              >
+                                <XCircle className="h-4 w-4 ml-1" /> رفض
+                              </Button>
+                            </>
+                          )}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                            onClick={() => setDeleteDialogState({ isOpen: true, regId: reg.id, username: reg.discordUsername })}
+                            data-testid={`btn-delete-${reg.id}`}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                     {expandedRows[reg.id] && (
@@ -300,6 +328,41 @@ export default function Registrations() {
               data-testid="btn-confirm-reject"
             >
               {rejectMutation.isPending ? "جاري الرفض..." : "تأكيد الرفض"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={deleteDialogState.isOpen}
+        onOpenChange={(isOpen) => setDeleteDialogState(prev => ({ ...prev, isOpen }))}
+      >
+        <DialogContent dir="rtl">
+          <DialogHeader>
+            <DialogTitle>حذف التسجيل</DialogTitle>
+          </DialogHeader>
+          <div className="py-4 text-sm text-muted-foreground">
+            هل أنت متأكد من حذف تسجيل <span className="font-semibold text-foreground">{deleteDialogState.username}</span>؟
+            <br />
+            لا يمكن التراجع عن هذا الإجراء.
+          </div>
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setDeleteDialogState(prev => ({ ...prev, isOpen: false }))}
+            >
+              إلغاء
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() =>
+                deleteDialogState.regId &&
+                deleteMutation.mutate({ id: deleteDialogState.regId })
+              }
+              disabled={deleteMutation.isPending}
+              data-testid="btn-confirm-delete"
+            >
+              {deleteMutation.isPending ? "جاري الحذف..." : "حذف"}
             </Button>
           </DialogFooter>
         </DialogContent>

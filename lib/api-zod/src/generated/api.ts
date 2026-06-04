@@ -256,6 +256,14 @@ export const GetRegistrationResponse = zod.object({
 
 
 /**
+ * @summary Delete a registration
+ */
+export const DeleteRegistrationParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+
+/**
  * @summary Approve a registration
  */
 export const ApproveRegistrationParams = zod.object({

@@ -297,6 +297,19 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Registration"
+    delete:
+      operationId: deleteRegistration
+      tags: [registrations]
+      summary: Delete a registration
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
 
   /registrations/{id}/approve:
     patch:
