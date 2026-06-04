@@ -427,9 +427,26 @@ export async function sendApprovalEmbed(
     )
     .setTimestamp();
 
-  // Display all formData entries (already stored with Arabic keys in order)
-  for (const [label, value] of Object.entries(formData)) {
-    embed.addFields({ name: label, value: String(value) || "—", inline: false });
+  // Format: group each player's data as "الاسم#الآيدي" + device on next line
+  if (formData["اسم اللاعب"]) {
+    // Solo
+    const name   = formData["اسم اللاعب"]   || "—";
+    const id     = formData["آيدي اللاعب"]   || "—";
+    const device = formData["الجهاز"]        || "—";
+    embed.addFields({ name: "اللاعب", value: `${name}#${id}\n${device}`, inline: false });
+  } else {
+    // Duo / Squad — iterate players in order
+    for (let i = 0; i < PLAYER_LABELS_AR.length; i++) {
+      const label = PLAYER_LABELS_AR[i];
+      const name   = formData[`اسم اللاعب ${label}`];
+      if (!name) break; // no more players
+      const id     = formData[`آيدي اللاعب ${label}`] || "—";
+      const device = formData[`جهاز اللاعب ${label}`] || "—";
+      embed.addFields({ name: `اللاعب ${label}`, value: `${name}#${id}\n${device}`, inline: true });
+    }
+    if (formData["اسم الفريق"]) {
+      embed.addFields({ name: "اسم الفريق", value: formData["اسم الفريق"], inline: false });
+    }
   }
 
   await (channel as any).send({ embeds: [embed] });
