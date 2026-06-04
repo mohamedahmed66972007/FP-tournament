@@ -8,8 +8,6 @@ import {
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
-  StringSelectMenuBuilder,
-  StringSelectMenuOptionBuilder,
   REST,
   Routes,
   SlashCommandBuilder,
@@ -17,7 +15,6 @@ import {
   type ButtonInteraction,
   type ModalSubmitInteraction,
   type CommandInteraction,
-  type StringSelectMenuInteraction,
 } from "discord.js";
 import { db, tournamentsTable, questionsTable, registrationsTable, botConfigTable } from "@workspace/db";
 import { eq, count, sql } from "drizzle-orm";
@@ -25,29 +22,392 @@ import { logger } from "./logger";
 
 let client: Client | null = null;
 
-// Stores pending select-menu answers while user is on step 1 (before the modal)
-// key = userId, value = { "q_<id>": selectedValue }
-const pendingSelections = new Map<string, Record<string, string>>();
+// ──────────────────────────────────────────────────────────────
+// Constants
+// ──────────────────────────────────────────────────────────────
+const PLAYER_LABELS_AR = ["الأول", "الثاني", "الثالث", "الرابع"];
+const DEFAULT_DEVICE_OPTIONS = ["PS4", "PS5", "Mobile", "PC"];
 
-export function getClient(): Client | null {
-  return client;
+const NUM_PLAYERS: Record<string, number> = { solo: 1, duo: 2, squad: 4 };
+
+// ──────────────────────────────────────────────────────────────
+// Pending registration state (in-memory per user)
+// ──────────────────────────────────────────────────────────────
+interface PlayerData {
+  name: string;
+  playerId: string;
+  device: string;
 }
 
-async function getBotToken(): Promise<string | null> {
-  try {
-    const [config] = await db.select().from(botConfigTable).limit(1);
-    if (config?.botToken) return config.botToken;
-  } catch {}
-  return process.env.DISCORD_BOT_TOKEN ?? null;
+interface PendingReg {
+  tournamentId: number;
+  tournamentType: string;
+  numPlayers: number;
+  players: Array<PlayerData | null>;
+  deviceOptions: string[];
+  teamName: string | null;
+}
+
+const pending = new Map<string, PendingReg>();
+
+// ──────────────────────────────────────────────────────────────
+// Custom ID helpers (kept short — Discord limit 100 chars)
+// ──────────────────────────────────────────────────────────────
+// rp_{idx}_{tid}   = register-player button
+// pm_{idx}_{tid}   = player modal customId
+// tn_{tid}         = team-name button
+// tnm_{tid}        = team-name modal customId
+
+function cidPlayerBtn(idx: number, tid: number)  { return `rp_${idx}_${tid}`; }
+function cidPlayerModal(idx: number, tid: number) { return `pm_${idx}_${tid}`; }
+function cidTeamBtn(tid: number)                  { return `tn_${tid}`; }
+function cidTeamModal(tid: number)                { return `tnm_${tid}`; }
+
+// ──────────────────────────────────────────────────────────────
+// UI builders
+// ──────────────────────────────────────────────────────────────
+function buildPlayerButtons(pr: PendingReg): ActionRowBuilder<ButtonBuilder>[] {
+  const rows: ActionRowBuilder<ButtonBuilder>[] = [];
+  const btnsPerRow = 2;
+
+  const allButtons = Array.from({ length: pr.numPlayers }, (_, i) => {
+    const done = pr.players[i] !== null;
+    return new ButtonBuilder()
+      .setCustomId(cidPlayerBtn(i, pr.tournamentId))
+      .setLabel(`${done ? "✅" : "🎮"} اللاعب ${PLAYER_LABELS_AR[i]}`)
+      .setStyle(done ? ButtonStyle.Secondary : ButtonStyle.Primary);
+  });
+
+  for (let i = 0; i < allButtons.length; i += btnsPerRow) {
+    rows.push(
+      new ActionRowBuilder<ButtonBuilder>().addComponents(allButtons.slice(i, i + btnsPerRow))
+    );
+  }
+
+  return rows;
+}
+
+function buildStatusMessage(pr: PendingReg): string {
+  const done = pr.players.filter(Boolean).length;
+  const total = pr.numPlayers;
+  const lines = [
+    `**تسجيل الفريق** — (${done}/${total} لاعبين)`,
+    "",
+    "اضغط على زر كل لاعب لإدخال بياناته:",
+  ];
+  if (done === total && pr.numPlayers > 1) {
+    lines.push("\n✅ أكملت جميع اللاعبين! اضغط الزر أدناه لإدخال اسم الفريق وإرسال الطلب.");
+  }
+  return lines.join("\n");
 }
 
 // ──────────────────────────────────────────────────────────────
-// Approval embed sent to the announcement channel
+// Fetch device options from DB (first select-type question)
+// ──────────────────────────────────────────────────────────────
+async function getDeviceOptions(tournamentId: number): Promise<string[]> {
+  const questions = await db
+    .select()
+    .from(questionsTable)
+    .where(eq(questionsTable.tournamentId, tournamentId));
+
+  const selectQ = questions.find(
+    (q) => ["select", "radio", "multiselect"].includes(q.type) && q.options && q.options.length > 0
+  );
+  return selectQ?.options ?? DEFAULT_DEVICE_OPTIONS;
+}
+
+// ──────────────────────────────────────────────────────────────
+// Check duplicate / capacity helpers
+// ──────────────────────────────────────────────────────────────
+async function checkCapacity(tournamentId: number, maxParticipants: number | null): Promise<boolean> {
+  if (maxParticipants == null) return true;
+  const [row] = await db
+    .select({ count: count() })
+    .from(registrationsTable)
+    .where(
+      sql`${registrationsTable.tournamentId} = ${tournamentId} AND ${registrationsTable.status} = 'approved'`
+    );
+  return Number(row?.count ?? 0) < maxParticipants;
+}
+
+async function checkDuplicate(tournamentId: number, discordUserId: string): Promise<boolean> {
+  const [existing] = await db
+    .select()
+    .from(registrationsTable)
+    .where(
+      sql`${registrationsTable.tournamentId} = ${tournamentId} AND ${registrationsTable.discordUserId} = ${discordUserId}`
+    );
+  return !!existing;
+}
+
+// ──────────────────────────────────────────────────────────────
+// Save registration to DB using Arabic keys for the dashboard
+// ──────────────────────────────────────────────────────────────
+async function saveRegistration(pr: PendingReg, discordUserId: string, discordUsername: string) {
+  const formData: Record<string, string> = {};
+
+  if (pr.numPlayers === 1) {
+    const p = pr.players[0];
+    if (p) {
+      formData["اسم اللاعب"] = p.name;
+      formData["آيدي اللاعب"] = p.playerId;
+      formData["الجهاز"] = p.device;
+    }
+  } else {
+    for (let i = 0; i < pr.numPlayers; i++) {
+      const p = pr.players[i];
+      const label = PLAYER_LABELS_AR[i];
+      if (p) {
+        formData[`اسم اللاعب ${label}`] = p.name;
+        formData[`آيدي اللاعب ${label}`] = p.playerId;
+        formData[`جهاز اللاعب ${label}`] = p.device;
+      }
+    }
+    if (pr.teamName) {
+      formData["اسم الفريق"] = pr.teamName;
+    }
+  }
+
+  await db.insert(registrationsTable).values({
+    tournamentId: pr.tournamentId,
+    discordUserId,
+    discordUsername,
+    status: "pending",
+    formData,
+  });
+}
+
+// ──────────────────────────────────────────────────────────────
+// STEP 1 — Main register button
+// ──────────────────────────────────────────────────────────────
+async function handleRegistrationButton(interaction: ButtonInteraction) {
+  const [tournament] = await db
+    .select()
+    .from(tournamentsTable)
+    .where(eq(tournamentsTable.status, "active"))
+    .limit(1);
+
+  if (!tournament) {
+    await interaction.reply({ content: "لا توجد بطولة متاحة حالياً.", ephemeral: true });
+    return;
+  }
+
+  if (!(await checkCapacity(tournament.id, tournament.maxParticipants))) {
+    await interaction.reply({ content: "تم اكتمال عدد المشاركين.", ephemeral: true });
+    return;
+  }
+
+  if (await checkDuplicate(tournament.id, interaction.user.id)) {
+    await interaction.reply({ content: "لقد قمت بالتسجيل مسبقاً في هذه البطولة.", ephemeral: true });
+    return;
+  }
+
+  const numPlayers = NUM_PLAYERS[tournament.type] ?? 1;
+  const deviceOptions = await getDeviceOptions(tournament.id);
+
+  const pr: PendingReg = {
+    tournamentId: tournament.id,
+    tournamentType: tournament.type,
+    numPlayers,
+    players: Array(numPlayers).fill(null),
+    currentDevice: null,
+    deviceOptions,
+    teamName: null,
+  };
+  pending.set(interaction.user.id, pr);
+
+  if (numPlayers === 1) {
+    // Solo — show the player modal directly (Name + ID + Device all in one)
+    await interaction.showModal(buildPlayerModal(0, pr));
+  } else {
+    // Duo / Squad — show player buttons
+    await interaction.reply({
+      content: buildStatusMessage(pr),
+      components: [...buildPlayerButtons(pr)],
+      ephemeral: true,
+    });
+  }
+}
+
+// ──────────────────────────────────────────────────────────────
+// STEP 2 — Player button clicked (duo/squad) → show modal directly
+// ──────────────────────────────────────────────────────────────
+async function handlePlayerButton(interaction: ButtonInteraction) {
+  // customId: rp_{idx}_{tid}
+  const [, idxStr] = interaction.customId.split("_");
+  const playerIdx = parseInt(idxStr, 10);
+
+  const pr = pending.get(interaction.user.id);
+  if (!pr) {
+    await interaction.reply({ content: "انتهت جلسة التسجيل. اضغط زر التسجيل من جديد.", ephemeral: true });
+    return;
+  }
+
+  await interaction.showModal(buildPlayerModal(playerIdx, pr));
+}
+
+// ──────────────────────────────────────────────────────────────
+// Build the per-player modal (Name + ID + Device — all in one)
+// Note: Discord modals only support TextInput, so Device is a
+//       text field with the available options shown as placeholder.
+// ──────────────────────────────────────────────────────────────
+function buildPlayerModal(playerIdx: number, pr: PendingReg): ModalBuilder {
+  const playerLabel = pr.numPlayers === 1 ? "اللاعب" : `اللاعب ${PLAYER_LABELS_AR[playerIdx]}`;
+  const deviceHint  = pr.deviceOptions.join(" / ");
+
+  const modal = new ModalBuilder()
+    .setCustomId(cidPlayerModal(playerIdx, pr.tournamentId))
+    .setTitle(`بيانات ${playerLabel}`);
+
+  modal.addComponents(
+    new ActionRowBuilder<TextInputBuilder>().addComponents(
+      new TextInputBuilder()
+        .setCustomId("player_name")
+        .setLabel(`اسم ${playerLabel}`)
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true)
+        .setPlaceholder("أدخل الاسم المستخدم في اللعبة")
+    ),
+    new ActionRowBuilder<TextInputBuilder>().addComponents(
+      new TextInputBuilder()
+        .setCustomId("player_id")
+        .setLabel(`آيدي ${playerLabel}`)
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true)
+        .setPlaceholder("أدخل الآيدي أو كود اللاعب")
+    ),
+    new ActionRowBuilder<TextInputBuilder>().addComponents(
+      new TextInputBuilder()
+        .setCustomId("player_device")
+        .setLabel("الجهاز")
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true)
+        .setPlaceholder(deviceHint.slice(0, 100))
+    )
+  );
+
+  return modal;
+}
+
+// ──────────────────────────────────────────────────────────────
+// STEP 5 — Player modal submitted
+// ──────────────────────────────────────────────────────────────
+async function handlePlayerModalSubmit(interaction: ModalSubmitInteraction, playerIdx: number) {
+  const pr = pending.get(interaction.user.id);
+  if (!pr) {
+    await interaction.reply({ content: "انتهت جلسة التسجيل. اضغط زر التسجيل من جديد.", ephemeral: true });
+    return;
+  }
+
+  const name     = interaction.fields.getTextInputValue("player_name");
+  const playerId = interaction.fields.getTextInputValue("player_id");
+  const device   = interaction.fields.getTextInputValue("player_device");
+
+  pr.players[playerIdx] = { name, playerId, device };
+
+  const allDone = pr.players.every(Boolean);
+
+  if (pr.numPlayers === 1) {
+    // Solo — save immediately
+    if (await checkDuplicate(pr.tournamentId, interaction.user.id)) {
+      await interaction.reply({ content: "لقد قمت بالتسجيل مسبقاً في هذه البطولة.", ephemeral: true });
+      pending.delete(interaction.user.id);
+      return;
+    }
+    await saveRegistration(pr, interaction.user.id, interaction.user.tag);
+    pending.delete(interaction.user.id);
+    await interaction.reply({
+      content: "✅ تم إرسال طلب تسجيلك بنجاح! سيتم مراجعته قريباً.",
+      ephemeral: true,
+    });
+    return;
+  }
+
+  if (allDone) {
+    // All players done — show team name button
+    await interaction.reply({
+      content: buildStatusMessage(pr),
+      components: [
+        ...buildPlayerButtons(pr),
+        new ActionRowBuilder<ButtonBuilder>().addComponents(
+          new ButtonBuilder()
+            .setCustomId(cidTeamBtn(pr.tournamentId))
+            .setLabel("🏆 إدخال اسم الفريق وإرسال الطلب")
+            .setStyle(ButtonStyle.Success)
+        ),
+      ],
+      ephemeral: true,
+    });
+  } else {
+    // Still players remaining — update status with buttons
+    await interaction.reply({
+      content: buildStatusMessage(pr),
+      components: [...buildPlayerButtons(pr)],
+      ephemeral: true,
+    });
+  }
+}
+
+// ──────────────────────────────────────────────────────────────
+// STEP 6 — Team name button → show modal
+// ──────────────────────────────────────────────────────────────
+async function handleTeamNameButton(interaction: ButtonInteraction) {
+  const tid = parseInt(interaction.customId.replace("tn_", ""), 10);
+  const pr = pending.get(interaction.user.id);
+  if (!pr) {
+    await interaction.reply({ content: "انتهت جلسة التسجيل. اضغط زر التسجيل من جديد.", ephemeral: true });
+    return;
+  }
+
+  const modal = new ModalBuilder()
+    .setCustomId(cidTeamModal(tid))
+    .setTitle("اسم الفريق");
+
+  const teamNameInput = new TextInputBuilder()
+    .setCustomId("team_name")
+    .setLabel("اسم الفريق")
+    .setStyle(TextInputStyle.Short)
+    .setRequired(true)
+    .setPlaceholder("أدخل اسم الفريق في البطولة");
+
+  modal.addComponents(new ActionRowBuilder<TextInputBuilder>().addComponents(teamNameInput));
+  await interaction.showModal(modal);
+}
+
+// ──────────────────────────────────────────────────────────────
+// STEP 7 — Team name modal submitted → save all
+// ──────────────────────────────────────────────────────────────
+async function handleTeamNameModalSubmit(interaction: ModalSubmitInteraction) {
+  const pr = pending.get(interaction.user.id);
+  if (!pr) {
+    await interaction.reply({ content: "انتهت جلسة التسجيل. اضغط زر التسجيل من جديد.", ephemeral: true });
+    return;
+  }
+
+  pr.teamName = interaction.fields.getTextInputValue("team_name");
+
+  if (await checkDuplicate(pr.tournamentId, interaction.user.id)) {
+    await interaction.reply({ content: "لقد قمت بالتسجيل مسبقاً في هذه البطولة.", ephemeral: true });
+    pending.delete(interaction.user.id);
+    return;
+  }
+
+  await saveRegistration(pr, interaction.user.id, interaction.user.tag);
+  pending.delete(interaction.user.id);
+
+  await interaction.reply({
+    content: "✅ تم إرسال طلب تسجيل فريقك بنجاح! سيتم مراجعته قريباً.",
+    ephemeral: true,
+  });
+}
+
+// ──────────────────────────────────────────────────────────────
+// Approval embed
 // ──────────────────────────────────────────────────────────────
 export async function sendApprovalEmbed(
   registration: typeof registrationsTable.$inferSelect,
   tournament: typeof tournamentsTable.$inferSelect,
-  questions: (typeof questionsTable.$inferSelect)[]
+  _questions: (typeof questionsTable.$inferSelect)[]
 ) {
   if (!client) return;
 
@@ -59,9 +419,6 @@ export async function sendApprovalEmbed(
 
   const formData = registration.formData as Record<string, string>;
 
-  // Sort questions by their order field so fields appear in the correct order
-  const sortedQuestions = [...questions].sort((a, b) => a.order - b.order);
-
   const embed = new EmbedBuilder()
     .setTitle("✅ تم قبول تسجيل جديد")
     .setColor(0x57f287)
@@ -70,13 +427,9 @@ export async function sendApprovalEmbed(
     )
     .setTimestamp();
 
-  for (const q of sortedQuestions) {
-    const value =
-      formData[`q_${q.id}`] ??
-      formData[q.id.toString()] ??
-      formData[q.label] ??
-      "—";
-    embed.addFields({ name: q.label, value: String(value) || "—", inline: false });
+  // Display all formData entries (already stored with Arabic keys in order)
+  for (const [label, value] of Object.entries(formData)) {
+    embed.addFields({ name: label, value: String(value) || "—", inline: false });
   }
 
   await (channel as any).send({ embeds: [embed] });
@@ -115,16 +468,14 @@ export async function sendRegistrationMessage(
   if (!t) throw new Error("Tournament not found");
 
   const typeLabels: Record<string, string> = { solo: "سولو", duo: "دو", squad: "سكواد" };
-  const typeLabel = typeLabels[t.type] ?? t.type;
-  const slotsLabel = t.maxParticipants != null ? `${t.maxParticipants}` : "غير محدود";
 
   const embed = new EmbedBuilder()
     .setTitle(`🏆  ${t.name}`)
     .setColor(0x5865f2)
     .setDescription("اضغط على الزر أدناه للتسجيل في البطولة.")
     .addFields(
-      { name: "نوع البطولة", value: typeLabel, inline: true },
-      { name: "عدد المشاركين", value: slotsLabel, inline: true },
+      { name: "نوع البطولة", value: typeLabels[t.type] ?? t.type, inline: true },
+      { name: "عدد المشاركين", value: t.maxParticipants != null ? `${t.maxParticipants}` : "غير محدود", inline: true },
       ...(t.prize ? [{ name: "الجائزة", value: t.prize, inline: true }] : [])
     )
     .setTimestamp();
@@ -143,283 +494,30 @@ export async function sendRegistrationMessage(
 }
 
 // ──────────────────────────────────────────────────────────────
-// Helpers
-// ──────────────────────────────────────────────────────────────
-function isSelectType(type: string) {
-  return ["select", "radio", "multiselect"].includes(type);
-}
-
-function buildTextModal(
-  tournament: typeof tournamentsTable.$inferSelect,
-  textQuestions: (typeof questionsTable.$inferSelect)[]
-) {
-  const modal = new ModalBuilder()
-    .setCustomId(`register_${tournament.id}`)
-    .setTitle(`التسجيل في ${tournament.name}`);
-
-  for (const q of textQuestions.slice(0, 5)) {
-    const input = new TextInputBuilder()
-      .setCustomId(`q_${q.id}`)
-      .setLabel(q.label.slice(0, 45))
-      .setStyle(TextInputStyle.Short)
-      .setRequired(q.required);
-    modal.addComponents(new ActionRowBuilder<TextInputBuilder>().addComponents(input));
-  }
-  return modal;
-}
-
-// ──────────────────────────────────────────────────────────────
-// Step 1 – Register button clicked
-// ──────────────────────────────────────────────────────────────
-async function handleRegistrationButton(interaction: ButtonInteraction) {
-  const [activeTournament] = await db
-    .select()
-    .from(tournamentsTable)
-    .where(eq(tournamentsTable.status, "active"))
-    .limit(1);
-
-  if (!activeTournament) {
-    await interaction.reply({ content: "لا توجد بطولة متاحة حالياً.", ephemeral: true });
-    return;
-  }
-
-  // Check capacity
-  if (activeTournament.maxParticipants != null) {
-    const [row] = await db
-      .select({ count: count() })
-      .from(registrationsTable)
-      .where(
-        sql`${registrationsTable.tournamentId} = ${activeTournament.id} AND ${registrationsTable.status} = 'approved'`
-      );
-    if (Number(row?.count ?? 0) >= activeTournament.maxParticipants) {
-      await interaction.reply({ content: "تم اكتمال عدد المشاركين.", ephemeral: true });
-      return;
-    }
-  }
-
-  // Check duplicate
-  const [existing] = await db
-    .select()
-    .from(registrationsTable)
-    .where(
-      sql`${registrationsTable.tournamentId} = ${activeTournament.id} AND ${registrationsTable.discordUserId} = ${interaction.user.id}`
-    );
-  if (existing) {
-    await interaction.reply({ content: "لقد قمت بالتسجيل مسبقاً في هذه البطولة.", ephemeral: true });
-    return;
-  }
-
-  const questions = await db
-    .select()
-    .from(questionsTable)
-    .where(eq(questionsTable.tournamentId, activeTournament.id))
-    .orderBy(questionsTable.order);
-
-  // Separate select-type questions (shown as menus) from text-type (shown in modal)
-  const selectQuestions = questions.filter(
-    (q) => isSelectType(q.type) && q.options && q.options.length > 0
-  );
-  const textQuestions = questions.filter(
-    (q) => !isSelectType(q.type) || !q.options || q.options.length === 0
-  );
-
-  // Initialise pending store for this user
-  pendingSelections.set(interaction.user.id, {});
-
-  if (selectQuestions.length > 0) {
-    // Build one StringSelectMenu row per select question (max 4 menus + 1 continue button = 5 rows)
-    const rows: ActionRowBuilder<StringSelectMenuBuilder | ButtonBuilder>[] = [];
-
-    for (const q of selectQuestions.slice(0, 4)) {
-      const menu = new StringSelectMenuBuilder()
-        .setCustomId(`selq_${q.id}_${activeTournament.id}`)
-        .setPlaceholder(`اختر: ${q.label.slice(0, 80)}`)
-        .addOptions(
-          q.options!.map((opt) =>
-            new StringSelectMenuOptionBuilder()
-              .setLabel(opt.slice(0, 100))
-              .setValue(opt.slice(0, 100))
-          )
-        );
-      rows.push(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(menu));
-    }
-
-    // Continue button (always visible — user proceeds after making selections)
-    rows.push(
-      new ActionRowBuilder<ButtonBuilder>().addComponents(
-        new ButtonBuilder()
-          .setCustomId(`continue_reg_${activeTournament.id}`)
-          .setLabel(textQuestions.length > 0 ? "متابعة ←" : "إرسال الطلب ✓")
-          .setStyle(ButtonStyle.Success)
-      )
-    );
-
-    await interaction.reply({
-      content:
-        "**الخطوة 1 من 2 — اختر إجاباتك ثم اضغط متابعة:**",
-      components: rows as any,
-      ephemeral: true,
-    });
-  } else {
-    // No select questions — show modal directly
-    await interaction.showModal(buildTextModal(activeTournament, textQuestions));
-  }
-}
-
-// ──────────────────────────────────────────────────────────────
-// Step 1b – User picks a value from a StringSelectMenu
-// ──────────────────────────────────────────────────────────────
-async function handleSelectMenuInteraction(interaction: StringSelectMenuInteraction) {
-  const parts = interaction.customId.split("_"); // selq_{questionId}_{tournamentId}
-  const questionId = parts[1];
-
-  const pending = pendingSelections.get(interaction.user.id) ?? {};
-  pending[`q_${questionId}`] = interaction.values[0];
-  pendingSelections.set(interaction.user.id, pending);
-
-  // Acknowledge silently so the menus stay visible
-  await interaction.deferUpdate();
-}
-
-// ──────────────────────────────────────────────────────────────
-// Step 2 – "Continue" button: show the text modal (or save directly)
-// ──────────────────────────────────────────────────────────────
-async function handleContinueRegistration(interaction: ButtonInteraction) {
-  const tournamentId = parseInt(interaction.customId.replace("continue_reg_", ""), 10);
-
-  const [tournament] = await db
-    .select()
-    .from(tournamentsTable)
-    .where(eq(tournamentsTable.id, tournamentId));
-
-  if (!tournament || tournament.status !== "active") {
-    await interaction.reply({ content: "البطولة لم تعد متاحة.", ephemeral: true });
-    return;
-  }
-
-  const questions = await db
-    .select()
-    .from(questionsTable)
-    .where(eq(questionsTable.tournamentId, tournamentId))
-    .orderBy(questionsTable.order);
-
-  const textQuestions = questions.filter(
-    (q) => !isSelectType(q.type) || !q.options || q.options.length === 0
-  );
-
-  if (textQuestions.length === 0) {
-    // Nothing left to fill — save straight away
-    const formData = pendingSelections.get(interaction.user.id) ?? {};
-    pendingSelections.delete(interaction.user.id);
-
-    // Check duplicate again (race condition guard)
-    const [existing] = await db
-      .select()
-      .from(registrationsTable)
-      .where(
-        sql`${registrationsTable.tournamentId} = ${tournamentId} AND ${registrationsTable.discordUserId} = ${interaction.user.id}`
-      );
-    if (existing) {
-      await interaction.update({ content: "لقد قمت بالتسجيل مسبقاً في هذه البطولة.", components: [] });
-      return;
-    }
-
-    await db.insert(registrationsTable).values({
-      tournamentId,
-      discordUserId: interaction.user.id,
-      discordUsername: interaction.user.tag,
-      status: "pending",
-      formData,
-    });
-
-    await interaction.update({
-      content: "✅ تم إرسال طلب تسجيلك بنجاح! سيتم مراجعته قريباً.",
-      components: [],
-    });
-    return;
-  }
-
-  // Show modal for the text questions (this is the first & only response to THIS interaction)
-  await interaction.showModal(buildTextModal(tournament, textQuestions));
-}
-
-// ──────────────────────────────────────────────────────────────
-// Step 3 – Modal submitted
-// ──────────────────────────────────────────────────────────────
-async function handleModalSubmit(interaction: ModalSubmitInteraction) {
-  const customId = interaction.customId;
-  if (!customId.startsWith("register_")) return;
-
-  const tournamentId = parseInt(customId.replace("register_", ""), 10);
-  const [tournament] = await db
-    .select()
-    .from(tournamentsTable)
-    .where(eq(tournamentsTable.id, tournamentId));
-
-  if (!tournament || tournament.status !== "active") {
-    await interaction.reply({ content: "لا توجد بطولة متاحة حالياً.", ephemeral: true });
-    return;
-  }
-
-  // Collect text-input answers
-  const formData: Record<string, string> = {};
-  for (const [key] of interaction.fields.fields) {
-    try {
-      formData[key] = interaction.fields.getTextInputValue(key);
-    } catch {
-      // skip
-    }
-  }
-
-  // Merge with any pending select answers from step 1
-  const selectData = pendingSelections.get(interaction.user.id) ?? {};
-  pendingSelections.delete(interaction.user.id);
-  const merged = { ...selectData, ...formData };
-
-  await db.insert(registrationsTable).values({
-    tournamentId,
-    discordUserId: interaction.user.id,
-    discordUsername: interaction.user.tag,
-    status: "pending",
-    formData: merged,
-  });
-
-  await interaction.reply({
-    content: "✅ تم إرسال طلب تسجيلك بنجاح! سيتم مراجعته قريباً.",
-    ephemeral: true,
-  });
-}
-
-// ──────────────────────────────────────────────────────────────
 // /tournament command
 // ──────────────────────────────────────────────────────────────
 async function handleTournamentCommand(interaction: CommandInteraction) {
-  const [activeTournament] = await db
+  const [t] = await db
     .select()
     .from(tournamentsTable)
     .where(eq(tournamentsTable.status, "active"))
     .limit(1);
 
-  if (!activeTournament) {
+  if (!t) {
     await interaction.reply({ content: "لا توجد بطولة متاحة حالياً.", ephemeral: true });
     return;
   }
 
   const typeLabels: Record<string, string> = { solo: "سولو", duo: "دو", squad: "سكواد" };
-  const typeLabel = typeLabels[activeTournament.type] ?? activeTournament.type;
-  const slotsLabel =
-    activeTournament.maxParticipants != null ? `${activeTournament.maxParticipants}` : "غير محدود";
 
   const embed = new EmbedBuilder()
-    .setTitle(`🏆  ${activeTournament.name}`)
+    .setTitle(`🏆  ${t.name}`)
     .setColor(0x5865f2)
     .setDescription("اضغط على الزر أدناه للتسجيل في البطولة.")
     .addFields(
-      { name: "نوع البطولة", value: typeLabel, inline: true },
-      { name: "عدد المشاركين", value: slotsLabel, inline: true },
-      ...(activeTournament.prize
-        ? [{ name: "الجائزة", value: activeTournament.prize, inline: true }]
-        : [])
+      { name: "نوع البطولة", value: typeLabels[t.type] ?? t.type, inline: true },
+      { name: "عدد المشاركين", value: t.maxParticipants != null ? `${t.maxParticipants}` : "غير محدود", inline: true },
+      ...(t.prize ? [{ name: "الجائزة", value: t.prize, inline: true }] : [])
     )
     .setTimestamp();
 
@@ -431,6 +529,18 @@ async function handleTournamentCommand(interaction: CommandInteraction) {
   );
 
   await interaction.reply({ embeds: [embed], components: [row] });
+}
+
+export function getClient(): Client | null {
+  return client;
+}
+
+async function getBotToken(): Promise<string | null> {
+  try {
+    const [config] = await db.select().from(botConfigTable).limit(1);
+    if (config?.botToken) return config.botToken;
+  } catch {}
+  return process.env.DISCORD_BOT_TOKEN ?? null;
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -475,25 +585,41 @@ export async function initDiscordBot() {
 
   client.on("interactionCreate", async (interaction: Interaction) => {
     try {
+      // ── Slash commands ──
       if (interaction.isCommand()) {
         const name = interaction.commandName;
         if (name === "tournament" || name === "بطولة") {
           await handleTournamentCommand(interaction as CommandInteraction);
         }
-      } else if (interaction.isStringSelectMenu()) {
-        const customId = (interaction as StringSelectMenuInteraction).customId;
-        if (customId.startsWith("selq_")) {
-          await handleSelectMenuInteraction(interaction as StringSelectMenuInteraction);
-        }
-      } else if (interaction.isButton()) {
-        const customId = (interaction as ButtonInteraction).customId;
-        if (customId === "register_tournament") {
+        return;
+      }
+
+      // ── Buttons ──
+      if (interaction.isButton()) {
+        const cid = (interaction as ButtonInteraction).customId;
+
+        if (cid === "register_tournament") {
           await handleRegistrationButton(interaction as ButtonInteraction);
-        } else if (customId.startsWith("continue_reg_")) {
-          await handleContinueRegistration(interaction as ButtonInteraction);
+        } else if (cid.startsWith("rp_")) {
+          await handlePlayerButton(interaction as ButtonInteraction);
+        } else if (cid.startsWith("tn_")) {
+          await handleTeamNameButton(interaction as ButtonInteraction);
         }
-      } else if (interaction.isModalSubmit()) {
-        await handleModalSubmit(interaction as ModalSubmitInteraction);
+        return;
+      }
+
+      // ── Modals ──
+      if (interaction.isModalSubmit()) {
+        const cid = (interaction as ModalSubmitInteraction).customId;
+
+        if (cid.startsWith("pm_")) {
+          // pm_{playerIdx}_{tid}
+          const parts = cid.split("_");
+          const playerIdx = parseInt(parts[1], 10);
+          await handlePlayerModalSubmit(interaction as ModalSubmitInteraction, playerIdx);
+        } else if (cid.startsWith("tnm_")) {
+          await handleTeamNameModalSubmit(interaction as ModalSubmitInteraction);
+        }
       }
     } catch (err) {
       logger.error({ err }, "Discord interaction error");
