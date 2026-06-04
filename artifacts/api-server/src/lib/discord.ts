@@ -26,6 +26,14 @@ export function getClient(): Client | null {
   return client;
 }
 
+async function getBotToken(): Promise<string | null> {
+  try {
+    const [config] = await db.select().from(botConfigTable).limit(1);
+    if (config?.botToken) return config.botToken;
+  } catch {}
+  return process.env.DISCORD_BOT_TOKEN ?? null;
+}
+
 export async function sendApprovalEmbed(
   registration: typeof registrationsTable.$inferSelect,
   tournament: typeof tournamentsTable.$inferSelect,
@@ -70,6 +78,48 @@ export async function sendRejectionDM(discordUserId: string, tournamentName: str
   }
 }
 
+export async function sendRegistrationMessage(tournamentId: number, channelId: string): Promise<void> {
+  if (!client) throw new Error("Discord bot not connected");
+
+  const [t] = await db.select().from(tournamentsTable).where(eq(tournamentsTable.id, tournamentId));
+  if (!t) throw new Error("Tournament not found");
+
+  const [approvedRow] = await db
+    .select({ count: count() })
+    .from(registrationsTable)
+    .where(sql`${registrationsTable.tournamentId} = ${tournamentId} AND ${registrationsTable.status} = 'approved'`);
+  const approvedCount = Number(approvedRow?.count ?? 0);
+  const remainingSeats = t.maxParticipants != null ? t.maxParticipants - approvedCount : null;
+
+  const typeLabels: Record<string, string> = { solo: "سولو", duo: "دو", squad: "سكواد" };
+
+  const embed = new EmbedBuilder()
+    .setTitle(`🏆 ${t.name}`)
+    .setColor(0x5865f2)
+    .addFields(
+      { name: "نوع البطولة | Type", value: `${typeLabels[t.type] ?? t.type} (${t.type.toUpperCase()})`, inline: true },
+      {
+        name: "المقاعد المتبقية | Remaining Seats",
+        value: remainingSeats != null ? remainingSeats.toString() : "غير محدود | Unlimited",
+        inline: true,
+      }
+    )
+    .setDescription("اضغط على الزر أدناه للتسجيل في البطولة.\nClick the button below to register for the tournament.")
+    .setTimestamp();
+
+  const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder()
+      .setCustomId("register_tournament")
+      .setLabel("🎮 التسجيل في البطولة | Register")
+      .setStyle(ButtonStyle.Primary)
+  );
+
+  const channel = await client.channels.fetch(channelId);
+  if (!channel || !channel.isTextBased()) throw new Error("Channel not found or not text-based");
+
+  await (channel as any).send({ embeds: [embed], components: [row] });
+}
+
 async function handleRegistrationButton(interaction: ButtonInteraction) {
   const [activeTournament] = await db
     .select()
@@ -82,7 +132,6 @@ async function handleRegistrationButton(interaction: ButtonInteraction) {
     return;
   }
 
-  // Check seat limit
   if (activeTournament.maxParticipants != null) {
     const [row] = await db
       .select({ count: count() })
@@ -97,7 +146,6 @@ async function handleRegistrationButton(interaction: ButtonInteraction) {
     }
   }
 
-  // Check duplicate registration
   const [existing] = await db
     .select()
     .from(registrationsTable)
@@ -116,7 +164,6 @@ async function handleRegistrationButton(interaction: ButtonInteraction) {
     .where(eq(questionsTable.tournamentId, activeTournament.id))
     .orderBy(questionsTable.order);
 
-  // Discord modals support max 5 components
   const modalQuestions = questions.slice(0, 5);
 
   const modal = new ModalBuilder()
@@ -192,23 +239,26 @@ async function handleTournamentCommand(interaction: CommandInteraction) {
   const remainingSeats =
     activeTournament.maxParticipants != null ? activeTournament.maxParticipants - approvedCount : null;
 
+  const typeLabels: Record<string, string> = { solo: "سولو", duo: "دو", squad: "سكواد" };
+
   const embed = new EmbedBuilder()
-    .setTitle(activeTournament.name)
+    .setTitle(`🏆 ${activeTournament.name}`)
     .setColor(0x5865f2)
     .addFields(
-      { name: "نوع البطولة", value: activeTournament.type.toUpperCase(), inline: true },
+      { name: "نوع البطولة | Type", value: `${typeLabels[activeTournament.type] ?? activeTournament.type} (${activeTournament.type.toUpperCase()})`, inline: true },
       {
-        name: "المقاعد المتبقية",
-        value: remainingSeats != null ? remainingSeats.toString() : "غير محدود",
+        name: "المقاعد المتبقية | Remaining Seats",
+        value: remainingSeats != null ? remainingSeats.toString() : "غير محدود | Unlimited",
         inline: true,
       }
     )
+    .setDescription("اضغط على الزر أدناه للتسجيل في البطولة.\nClick the button below to register.")
     .setTimestamp();
 
   const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()
       .setCustomId("register_tournament")
-      .setLabel("🎮 التسجيل في البطولة")
+      .setLabel("🎮 التسجيل في البطولة | Register")
       .setStyle(ButtonStyle.Primary)
   );
 
@@ -216,10 +266,15 @@ async function handleTournamentCommand(interaction: CommandInteraction) {
 }
 
 export async function initDiscordBot() {
-  const token = process.env.DISCORD_BOT_TOKEN;
+  const token = await getBotToken();
   if (!token) {
     logger.warn("DISCORD_BOT_TOKEN not set — Discord bot disabled");
     return;
+  }
+
+  if (client) {
+    try { client.destroy(); } catch {}
+    client = null;
   }
 
   client = new Client({
@@ -229,7 +284,6 @@ export async function initDiscordBot() {
   client.once("ready", async () => {
     logger.info({ tag: client!.user?.tag }, "Discord bot ready");
 
-    // Register slash commands
     const rest = new REST({ version: "10" }).setToken(token);
     const commands = [
       new SlashCommandBuilder().setName("tournament").setDescription("عرض البطولة الحالية والتسجيل"),
@@ -268,4 +322,8 @@ export async function initDiscordBot() {
   } catch (err) {
     logger.error({ err }, "Discord bot login failed");
   }
+}
+
+export async function reloadDiscordBot() {
+  await initDiscordBot();
 }

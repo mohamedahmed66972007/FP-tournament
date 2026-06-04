@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, sql, count } from "drizzle-orm";
-import { db, tournamentsTable, registrationsTable } from "@workspace/db";
+import { db, tournamentsTable, registrationsTable, questionsTable } from "@workspace/db";
 import {
   ListTournamentsResponse,
   CreateTournamentBody,
@@ -14,8 +14,49 @@ import {
   GetTournamentStatsResponse,
 } from "@workspace/api-zod";
 import { logger } from "../lib/logger";
+import { sendRegistrationMessage, getClient } from "../lib/discord";
 
 const router: IRouter = Router();
+
+const DEVICE_OPTIONS = ["Mobile", "PC", "iPad", "Controller"];
+
+const DEFAULT_QUESTIONS: Record<string, Array<{
+  label: string;
+  type: "text" | "number" | "select";
+  options?: string[];
+  required: boolean;
+  order: number;
+}>> = {
+  solo: [
+    { label: "اسم الحساب | Account Name", type: "text", required: true, order: 1 },
+    { label: "ID اللعبة | Game ID", type: "number", required: true, order: 2 },
+    { label: "الجهاز | Device", type: "select", options: DEVICE_OPTIONS, required: true, order: 3 },
+  ],
+  duo: [
+    { label: "اسم حساب اللاعب الأول | Player 1 Account Name", type: "text", required: true, order: 1 },
+    { label: "اسم حساب اللاعب الثاني | Player 2 Account Name", type: "text", required: true, order: 2 },
+    { label: "ID اللاعب الأول | Player 1 ID", type: "number", required: true, order: 3 },
+    { label: "ID اللاعب الثاني | Player 2 ID", type: "number", required: true, order: 4 },
+    { label: "جهاز اللاعب الأول | Player 1 Device", type: "select", options: DEVICE_OPTIONS, required: true, order: 5 },
+    { label: "جهاز اللاعب الثاني | Player 2 Device", type: "select", options: DEVICE_OPTIONS, required: true, order: 6 },
+    { label: "اسم الفريق | Team Name", type: "text", required: true, order: 7 },
+  ],
+  squad: [
+    { label: "اسم اللاعب الأول | Player 1 Name", type: "text", required: true, order: 1 },
+    { label: "اسم اللاعب الثاني | Player 2 Name", type: "text", required: true, order: 2 },
+    { label: "اسم اللاعب الثالث | Player 3 Name", type: "text", required: true, order: 3 },
+    { label: "اسم اللاعب الرابع | Player 4 Name", type: "text", required: true, order: 4 },
+    { label: "ID اللاعب الأول | Player 1 ID", type: "number", required: true, order: 5 },
+    { label: "ID اللاعب الثاني | Player 2 ID", type: "number", required: true, order: 6 },
+    { label: "ID اللاعب الثالث | Player 3 ID", type: "number", required: true, order: 7 },
+    { label: "ID اللاعب الرابع | Player 4 ID", type: "number", required: true, order: 8 },
+    { label: "جهاز اللاعب الأول | Player 1 Device", type: "select", options: DEVICE_OPTIONS, required: true, order: 9 },
+    { label: "جهاز اللاعب الثاني | Player 2 Device", type: "select", options: DEVICE_OPTIONS, required: true, order: 10 },
+    { label: "جهاز اللاعب الثالث | Player 3 Device", type: "select", options: DEVICE_OPTIONS, required: true, order: 11 },
+    { label: "جهاز اللاعب الرابع | Player 4 Device", type: "select", options: DEVICE_OPTIONS, required: true, order: 12 },
+    { label: "اسم الفريق | Team Name", type: "text", required: true, order: 13 },
+  ],
+};
 
 async function getTournamentWithCounts(id: number) {
   const [t] = await db.select().from(tournamentsTable).where(eq(tournamentsTable.id, id));
@@ -71,6 +112,14 @@ router.post("/tournaments", async (req, res): Promise<void> => {
     return;
   }
   const [tournament] = await db.insert(tournamentsTable).values(parsed.data).returning();
+
+  const defaultQs = DEFAULT_QUESTIONS[tournament.type] ?? [];
+  if (defaultQs.length > 0) {
+    await db.insert(questionsTable).values(
+      defaultQs.map((q) => ({ ...q, tournamentId: tournament.id }))
+    );
+  }
+
   const result = await getTournamentWithCounts(tournament.id);
   res.status(201).json(GetTournamentResponse.parse(result));
 });
@@ -117,7 +166,6 @@ router.patch("/tournaments/:id", async (req, res): Promise<void> => {
     return;
   }
 
-  // If activating, deactivate all others first
   if (parsed.data.status === "active") {
     await db
       .update(tournamentsTable)
@@ -203,6 +251,33 @@ router.get("/tournaments/:id/stats", async (req, res): Promise<void> => {
       remainingSeats,
     })
   );
+});
+
+router.post("/tournaments/:id/send-registration-message", async (req, res): Promise<void> => {
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) {
+    res.status(400).json({ error: "Invalid tournament ID" });
+    return;
+  }
+
+  const { channelId } = req.body;
+  if (!channelId || typeof channelId !== "string") {
+    res.status(400).json({ error: "channelId is required" });
+    return;
+  }
+
+  if (!getClient()) {
+    res.status(503).json({ error: "Discord bot not connected. Please configure the bot token first." });
+    return;
+  }
+
+  try {
+    await sendRegistrationMessage(id, channelId);
+    res.json({ success: true });
+  } catch (err: any) {
+    logger.error({ err }, "Failed to send registration message");
+    res.status(500).json({ error: err.message ?? "Failed to send message" });
+  }
 });
 
 export default router;

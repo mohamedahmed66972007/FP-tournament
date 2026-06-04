@@ -297,7 +297,8 @@ export const RejectRegistrationResponse = zod.object({
 export const GetBotConfigResponse = zod.object({
   "id": zod.number(),
   "announcementChannelId": zod.string().nullish(),
-  "guildId": zod.string().nullish()
+  "guildId": zod.string().nullish(),
+  "botToken": zod.string().nullish()
 })
 
 
@@ -306,13 +307,15 @@ export const GetBotConfigResponse = zod.object({
  */
 export const UpdateBotConfigBody = zod.object({
   "announcementChannelId": zod.string().nullish(),
-  "guildId": zod.string().nullish()
+  "guildId": zod.string().nullish(),
+  "botToken": zod.string().nullish()
 })
 
 export const UpdateBotConfigResponse = zod.object({
   "id": zod.number(),
   "announcementChannelId": zod.string().nullish(),
-  "guildId": zod.string().nullish()
+  "guildId": zod.string().nullish(),
+  "botToken": zod.string().nullish()
 })
 
 

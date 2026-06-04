@@ -6,6 +6,7 @@ export const botConfigTable = pgTable("bot_config", {
   id: serial("id").primaryKey(),
   announcementChannelId: text("announcement_channel_id"),
   guildId: text("guild_id"),
+  botToken: text("bot_token"),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });
 

@@ -6,6 +6,7 @@ import {
   UpdateBotConfigResponse,
 } from "@workspace/api-zod";
 import { eq } from "drizzle-orm";
+import { reloadDiscordBot } from "../lib/discord";
 
 const router: IRouter = Router();
 
@@ -22,6 +23,7 @@ router.get("/bot/config", async (req, res): Promise<void> => {
     ...config,
     announcementChannelId: config.announcementChannelId ?? null,
     guildId: config.guildId ?? null,
+    botToken: config.botToken ? "***" : null,
   }));
 });
 
@@ -33,16 +35,29 @@ router.patch("/bot/config", async (req, res): Promise<void> => {
   }
 
   const config = await getOrCreateConfig();
+
+  const updateData: Record<string, any> = {};
+  if (parsed.data.announcementChannelId !== undefined) updateData.announcementChannelId = parsed.data.announcementChannelId;
+  if (parsed.data.guildId !== undefined) updateData.guildId = parsed.data.guildId;
+  if (parsed.data.botToken !== undefined && parsed.data.botToken !== "***") {
+    updateData.botToken = parsed.data.botToken;
+  }
+
   const [updated] = await db
     .update(botConfigTable)
-    .set(parsed.data)
+    .set(updateData)
     .where(eq(botConfigTable.id, config.id))
     .returning();
+
+  if (updateData.botToken) {
+    reloadDiscordBot().catch(() => {});
+  }
 
   res.json(UpdateBotConfigResponse.parse({
     ...updated,
     announcementChannelId: updated.announcementChannelId ?? null,
     guildId: updated.guildId ?? null,
+    botToken: updated.botToken ? "***" : null,
   }));
 });
 

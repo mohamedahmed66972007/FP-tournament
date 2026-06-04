@@ -11,13 +11,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Bot, Save, Server, Hash } from "lucide-react";
+import { Bot, Save, Server, Hash, KeyRound } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useEffect } from "react";
 
 const configSchema = z.object({
   guildId: z.string().min(1, "ID السيرفر مطلوب"),
   announcementChannelId: z.string().min(1, "ID القناة مطلوب"),
+  botToken: z.string().optional(),
 });
 
 export default function BotConfig() {
@@ -45,6 +46,7 @@ export default function BotConfig() {
     defaultValues: {
       guildId: "",
       announcementChannelId: "",
+      botToken: "",
     },
   });
 
@@ -53,18 +55,27 @@ export default function BotConfig() {
       form.reset({
         guildId: config.guildId || "",
         announcementChannelId: config.announcementChannelId || "",
+        botToken: "",
       });
     }
   }, [config, form]);
 
   function onSubmit(values: z.infer<typeof configSchema>) {
-    updateMutation.mutate({ data: values });
+    updateMutation.mutate({
+      data: {
+        guildId: values.guildId,
+        announcementChannelId: values.announcementChannelId,
+        ...(values.botToken ? { botToken: values.botToken } : {}),
+      }
+    });
   }
+
+  const isBotTokenSaved = config?.botToken === "***";
 
   return (
     <div className="space-y-6 max-w-2xl">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">إعدادات البوت</h1>
+        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">إعدادات البوت</h1>
         <p className="text-muted-foreground">اربط البوت بسيرفر Discord الخاص بك.</p>
       </div>
 
@@ -75,7 +86,7 @@ export default function BotConfig() {
             إعدادات الاتصال
           </CardTitle>
           <CardDescription>
-            هذه المعرّفات ضرورية لكي يرسل البوت الإعلانات في القناة الصحيحة.
+            هذه المعرّفات ضرورية لكي يعمل البوت ويرسل الإعلانات في القناة الصحيحة.
           </CardDescription>
         </CardHeader>
         <Form {...form}>
@@ -83,13 +94,40 @@ export default function BotConfig() {
             <CardContent className="space-y-6">
               <div className="p-4 bg-muted rounded-lg flex items-center justify-between border">
                 <div className="flex items-center gap-3">
-                  <div className={`h-3 w-3 rounded-full ${config?.guildId ? "bg-green-500" : "bg-yellow-500 animate-pulse"}`} />
+                  <div className={`h-3 w-3 rounded-full ${isBotTokenSaved ? "bg-green-500" : "bg-yellow-500 animate-pulse"}`} />
                   <span className="font-medium">
-                    {config?.guildId ? "البوت مُعدَّل بنجاح" : "يحتاج إلى إعداد"}
+                    {isBotTokenSaved ? "البوت مُعدَّل بنجاح" : "يحتاج إلى إعداد"}
                   </span>
                 </div>
                 <span className="text-sm text-muted-foreground">الحالة</span>
               </div>
+
+              <FormField
+                control={form.control}
+                name="botToken"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="flex items-center gap-2">
+                      <KeyRound className="h-4 w-4" />
+                      توكن البوت (Bot Token)
+                    </FormLabel>
+                    <FormControl>
+                      <Input
+                        type="password"
+                        placeholder={isBotTokenSaved ? "••••••••••••••••••••••••• (محفوظ)" : "أدخل توكن البوت هنا"}
+                        {...field}
+                        data-testid="input-bot-token"
+                      />
+                    </FormControl>
+                    <p className="text-[0.8rem] text-muted-foreground mt-1">
+                      {isBotTokenSaved
+                        ? "التوكن محفوظ. أدخل توكن جديد فقط إذا أردت تغييره."
+                        : "أدخل توكن البوت من Discord Developer Portal."}
+                    </p>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
               <FormField
                 control={form.control}
@@ -120,10 +158,10 @@ export default function BotConfig() {
                         <Input className="pr-9" placeholder="مثال: 987654321098765432" {...field} data-testid="input-channel-id" />
                       </div>
                     </FormControl>
-                    <FormMessage />
                     <p className="text-[0.8rem] text-muted-foreground mt-2">
                       القناة التي سيرسل فيها البوت إعلانات القبول.
                     </p>
+                    <FormMessage />
                   </FormItem>
                 )}
               />
