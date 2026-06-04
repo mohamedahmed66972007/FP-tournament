@@ -392,7 +392,11 @@ async function handlePlayerModalSubmit(interaction: ModalSubmitInteraction, play
   const playerId = interaction.fields.getTextInputValue("player_id");
   const device   = interaction.fields.getTextInputValue("player_device");
 
-  pr.players[playerIdx] = { name, playerId, device };
+  const wasAlreadyDone = pr.players[playerIdx] !== null;
+
+  // Preserve existing discordId if re-editing
+  const existingDiscordId = pr.players[playerIdx]?.discordId;
+  pr.players[playerIdx] = { name, playerId, device, discordId: existingDiscordId };
 
   if (pr.numPlayers === 1) {
     // Solo — save immediately
@@ -408,7 +412,14 @@ async function handlePlayerModalSubmit(interaction: ModalSubmitInteraction, play
     return;
   }
 
-  // Duo / Squad — delete old message, send updated status (or all-selects if all done)
+  if (wasAlreadyDone) {
+    // Re-edit: silently acknowledge and keep the existing status message unchanged
+    await interaction.deferReply({ ephemeral: true });
+    await interaction.deleteReply().catch(() => {});
+    return;
+  }
+
+  // First-time fill: delete old message, send updated status (or all-selects if all done)
   await showStatusReply(interaction, pr);
 }
 
