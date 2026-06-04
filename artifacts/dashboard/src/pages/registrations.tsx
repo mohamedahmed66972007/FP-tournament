@@ -92,15 +92,20 @@ export default function Registrations() {
     username: string;
   }>({ isOpen: false, regId: null, username: "" });
 
+  const filterParams = statusFilter !== "all" ? { status: statusFilter as any } : undefined;
+
   const { data: registrations, isLoading } = useListRegistrations(
-    statusFilter !== "all" ? { query: { status: statusFilter as any } } : undefined,
-    { query: { queryKey: getListRegistrationsQueryKey(statusFilter !== "all" ? { status: statusFilter as any } : undefined) } }
+    filterParams,
+    { query: { queryKey: getListRegistrationsQueryKey(filterParams) } }
   );
+
+  const invalidateAll = () =>
+    queryClient.invalidateQueries({ queryKey: ["/api/registrations"], exact: false });
 
   const approveMutation = useApproveRegistration({
     mutation: {
       onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: getListRegistrationsQueryKey() });
+        invalidateAll();
         toast({ title: "تم قبول التسجيل" });
       }
     }
@@ -109,7 +114,7 @@ export default function Registrations() {
   const rejectMutation = useRejectRegistration({
     mutation: {
       onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: getListRegistrationsQueryKey() });
+        invalidateAll();
         setRejectDialogState({ isOpen: false, regId: null, reason: "" });
         toast({ title: "تم رفض التسجيل" });
       }
@@ -119,7 +124,7 @@ export default function Registrations() {
   const deleteMutation = useDeleteRegistration({
     mutation: {
       onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: getListRegistrationsQueryKey() });
+        invalidateAll();
         setDeleteDialogState({ isOpen: false, regId: null, username: "" });
         toast({ title: "تم حذف التسجيل" });
       }
