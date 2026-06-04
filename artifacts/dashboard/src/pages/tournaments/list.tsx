@@ -192,7 +192,7 @@ export default function TournamentList() {
                       <FormLabel>الجائزة (اختياري)</FormLabel>
                       <FormControl>
                         <Input
-                          placeholder="مثال: 500 ريال"
+                          placeholder="مثال: 500 جولد"
                           {...field}
                           value={field.value ?? ""}
                         />
