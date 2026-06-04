@@ -1,0 +1,562 @@
+openapi: 3.1.0
+info:
+  title: Api
+  version: 0.1.0
+  description: Discord Tournament Management Bot API
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: tournaments
+    description: Tournament management
+  - name: questions
+    description: Tournament question management
+  - name: registrations
+    description: Registration management
+  - name: bot
+    description: Discord bot configuration
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+  /tournaments:
+    get:
+      operationId: listTournaments
+      tags: [tournaments]
+      summary: List all tournaments
+      responses:
+        "200":
+          description: List of tournaments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Tournament"
+    post:
+      operationId: createTournament
+      tags: [tournaments]
+      summary: Create a tournament
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TournamentInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tournament"
+
+  /tournaments/active:
+    get:
+      operationId: getActiveTournament
+      tags: [tournaments]
+      summary: Get the currently active tournament
+      responses:
+        "200":
+          description: Active tournament
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tournament"
+        "404":
+          description: No active tournament
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /tournaments/{id}:
+    get:
+      operationId: getTournament
+      tags: [tournaments]
+      summary: Get a tournament by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Tournament
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tournament"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      operationId: updateTournament
+      tags: [tournaments]
+      summary: Update a tournament
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TournamentUpdate"
+      responses:
+        "200":
+          description: Updated tournament
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tournament"
+    delete:
+      operationId: deleteTournament
+      tags: [tournaments]
+      summary: Delete a tournament
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  /tournaments/{id}/stats:
+    get:
+      operationId: getTournamentStats
+      tags: [tournaments]
+      summary: Get registration stats for a tournament
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Tournament stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TournamentStats"
+
+  /tournaments/{id}/questions:
+    get:
+      operationId: listQuestions
+      tags: [questions]
+      summary: List questions for a tournament
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of questions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Question"
+    post:
+      operationId: createQuestion
+      tags: [questions]
+      summary: Add a question to a tournament
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/QuestionInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Question"
+
+  /tournaments/{id}/questions/{questionId}:
+    patch:
+      operationId: updateQuestion
+      tags: [questions]
+      summary: Update a question
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: questionId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/QuestionUpdate"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Question"
+    delete:
+      operationId: deleteQuestion
+      tags: [questions]
+      summary: Delete a question
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: questionId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  /registrations:
+    get:
+      operationId: listRegistrations
+      tags: [registrations]
+      summary: List registrations
+      parameters:
+        - name: tournamentId
+          in: query
+          schema:
+            type: integer
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, approved, rejected]
+      responses:
+        "200":
+          description: List of registrations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Registration"
+
+  /registrations/{id}:
+    get:
+      operationId: getRegistration
+      tags: [registrations]
+      summary: Get a registration
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Registration
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Registration"
+
+  /registrations/{id}/approve:
+    patch:
+      operationId: approveRegistration
+      tags: [registrations]
+      summary: Approve a registration
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Approved registration
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Registration"
+
+  /registrations/{id}/reject:
+    patch:
+      operationId: rejectRegistration
+      tags: [registrations]
+      summary: Reject a registration
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RejectionInput"
+      responses:
+        "200":
+          description: Rejected registration
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Registration"
+
+  /bot/config:
+    get:
+      operationId: getBotConfig
+      tags: [bot]
+      summary: Get bot configuration
+      responses:
+        "200":
+          description: Bot config
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BotConfig"
+    patch:
+      operationId: updateBotConfig
+      tags: [bot]
+      summary: Update bot configuration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BotConfigUpdate"
+      responses:
+        "200":
+          description: Updated config
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BotConfig"
+
+components:
+  schemas:
+    HealthStatus:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+
+    Tournament:
+      type: object
+      required: [id, name, type, status, createdAt, acceptedCount, pendingCount]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        type:
+          type: string
+          enum: [solo, duo, squad]
+        status:
+          type: string
+          enum: [active, inactive]
+        maxParticipants:
+          type: ["integer", "null"]
+        acceptedCount:
+          type: integer
+        pendingCount:
+          type: integer
+        createdAt:
+          type: string
+
+    TournamentInput:
+      type: object
+      required: [name, type]
+      properties:
+        name:
+          type: string
+          minLength: 1
+        type:
+          type: string
+          enum: [solo, duo, squad]
+        maxParticipants:
+          type: ["integer", "null"]
+
+    TournamentUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+        type:
+          type: string
+          enum: [solo, duo, squad]
+        status:
+          type: string
+          enum: [active, inactive]
+        maxParticipants:
+          type: ["integer", "null"]
+
+    TournamentStats:
+      type: object
+      required: [totalRegistrations, approvedCount, pendingCount, rejectedCount]
+      properties:
+        totalRegistrations:
+          type: integer
+        approvedCount:
+          type: integer
+        pendingCount:
+          type: integer
+        rejectedCount:
+          type: integer
+        remainingSeats:
+          type: ["integer", "null"]
+
+    Question:
+      type: object
+      required: [id, tournamentId, label, type, order, required]
+      properties:
+        id:
+          type: integer
+        tournamentId:
+          type: integer
+        label:
+          type: string
+        type:
+          type: string
+          enum: [text, number, select, multiselect, radio]
+        options:
+          type: ["array", "null"]
+          items:
+            type: string
+        order:
+          type: integer
+        required:
+          type: boolean
+
+    QuestionInput:
+      type: object
+      required: [label, type, order, required]
+      properties:
+        label:
+          type: string
+          minLength: 1
+        type:
+          type: string
+          enum: [text, number, select, multiselect, radio]
+        options:
+          type: ["array", "null"]
+          items:
+            type: string
+        order:
+          type: integer
+        required:
+          type: boolean
+
+    QuestionUpdate:
+      type: object
+      properties:
+        label:
+          type: string
+          minLength: 1
+        type:
+          type: string
+          enum: [text, number, select, multiselect, radio]
+        options:
+          type: ["array", "null"]
+          items:
+            type: string
+        order:
+          type: integer
+        required:
+          type: boolean
+
+    Registration:
+      type: object
+      required: [id, tournamentId, discordUserId, discordUsername, status, formData, createdAt]
+      properties:
+        id:
+          type: integer
+        tournamentId:
+          type: integer
+        discordUserId:
+          type: string
+        discordUsername:
+          type: string
+        status:
+          type: string
+          enum: [pending, approved, rejected]
+        formData:
+          type: object
+          additionalProperties: true
+        rejectionReason:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+
+    RejectionInput:
+      type: object
+      properties:
+        reason:
+          type: ["string", "null"]
+
+    BotConfig:
+      type: object
+      required: [id]
+      properties:
+        id:
+          type: integer
+        announcementChannelId:
+          type: ["string", "null"]
+        guildId:
+          type: ["string", "null"]
+
+    BotConfigUpdate:
+      type: object
+      properties:
+        announcementChannelId:
+          type: ["string", "null"]
+        guildId:
+          type: ["string", "null"]
