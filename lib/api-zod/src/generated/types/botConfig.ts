@@ -12,4 +12,6 @@ export interface BotConfig {
   announcementChannelId?: string | null;
   /** @nullable */
   guildId?: string | null;
+  /** @nullable */
+  botToken?: string | null;
 }

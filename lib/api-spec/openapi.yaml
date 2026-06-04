@@ -558,6 +558,8 @@ components:
           type: ["string", "null"]
         guildId:
           type: ["string", "null"]
+        botToken:
+          type: ["string", "null"]
 
     BotConfigUpdate:
       type: object
@@ -565,4 +567,6 @@ components:
         announcementChannelId:
           type: ["string", "null"]
         guildId:
+          type: ["string", "null"]
+        botToken:
           type: ["string", "null"]

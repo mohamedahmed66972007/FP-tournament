@@ -198,6 +198,8 @@ export interface BotConfig {
   announcementChannelId?: string | null;
   /** @nullable */
   guildId?: string | null;
+  /** @nullable */
+  botToken?: string | null;
 }
 
 export interface BotConfigUpdate {
@@ -205,6 +207,8 @@ export interface BotConfigUpdate {
   announcementChannelId?: string | null;
   /** @nullable */
   guildId?: string | null;
+  /** @nullable */
+  botToken?: string | null;
 }
 
 export type ListRegistrationsParams = {
