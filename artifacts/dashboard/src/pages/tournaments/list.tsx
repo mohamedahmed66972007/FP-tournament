@@ -137,7 +137,7 @@ export default function TournamentList() {
                     <FormItem>
                       <FormLabel>اسم البطولة</FormLabel>
                       <FormControl>
-                        <Input placeholder="مثال: بطولة FP الصيفية 2025" {...field} />
+                        <Input placeholder="مثال: بطولة على 500 جولد" {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>

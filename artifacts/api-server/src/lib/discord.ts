@@ -423,7 +423,7 @@ export async function sendApprovalEmbed(
     .setTitle("✅ تم قبول تسجيل جديد")
     .setColor(0x57f287)
     .setDescription(
-      `مبروك <@${registration.discordUserId}>!\nتم قبول تسجيلك في بطولة **${tournament.name}**`
+      `<@${registration.discordUserId}> تم قبول تسجيلك في بطولة **${tournament.name}**`
     )
     .setTimestamp();
 
