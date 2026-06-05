@@ -18,35 +18,18 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "workflow.run"
-args = "API Server"
-
-[[workflows.workflow.tasks]]
-task = "workflow.run"
-args = "Start application"
+args = "Discord Bot"
 
 [[workflows.workflow]]
-name = "API Server"
+name = "Discord Bot"
 author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "pnpm --filter @workspace/discord-bot run dev"
 
 [workflows.workflow.metadata]
 outputType = "console"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "PORT=8080 pnpm --filter @workspace/api-server run dev"
-waitForPort = 8080
-
-[[workflows.workflow]]
-name = "Start application"
-author = "agent"
-
-[workflows.workflow.metadata]
-outputType = "webview"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "PORT=23183 BASE_PATH=/ pnpm --filter @workspace/dashboard run dev"
-waitForPort = 23183
 
 [agent]
 stack = "BEST_EFFORT_FALLBACK"

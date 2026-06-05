@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, integer, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, integer, jsonb, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -10,6 +10,7 @@ export const registrationsTable = pgTable("registrations", {
   status: text("status", { enum: ["pending", "approved", "rejected"] }).notNull().default("pending"),
   formData: jsonb("form_data").notNull().default({}),
   rejectionReason: text("rejection_reason"),
+  notificationSent: boolean("notification_sent").default(false).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });

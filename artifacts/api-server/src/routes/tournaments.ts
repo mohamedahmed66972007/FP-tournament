@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, sql, count } from "drizzle-orm";
-import { db, tournamentsTable, registrationsTable, questionsTable } from "@workspace/db";
+import { db, tournamentsTable, registrationsTable, questionsTable, pendingAnnouncementsTable } from "@workspace/db";
 import {
   ListTournamentsResponse,
   CreateTournamentBody,
@@ -14,7 +14,6 @@ import {
   GetTournamentStatsResponse,
 } from "@workspace/api-zod";
 import { logger } from "../lib/logger";
-import { sendRegistrationMessage, getClient } from "../lib/discord";
 
 const router: IRouter = Router();
 
@@ -266,18 +265,15 @@ router.post("/tournaments/:id/send-registration-message", async (req, res): Prom
     return;
   }
 
-  if (!getClient()) {
-    res.status(503).json({ error: "Discord bot not connected. Please configure the bot token first." });
+  const [t] = await db.select().from(tournamentsTable).where(eq(tournamentsTable.id, id));
+  if (!t) {
+    res.status(404).json({ error: "Tournament not found" });
     return;
   }
 
-  try {
-    await sendRegistrationMessage(id, channelId);
-    res.json({ success: true });
-  } catch (err: any) {
-    logger.error({ err }, "Failed to send registration message");
-    res.status(500).json({ error: err.message ?? "Failed to send message" });
-  }
+  await db.insert(pendingAnnouncementsTable).values({ tournamentId: id, channelId });
+  logger.info({ tournamentId: id, channelId }, "Announcement queued — bot will post it shortly");
+  res.json({ success: true });
 });
 
 export default router;

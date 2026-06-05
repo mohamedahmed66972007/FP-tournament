@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, and } from "drizzle-orm";
-import { db, registrationsTable, tournamentsTable, questionsTable } from "@workspace/db";
+import { db, registrationsTable, tournamentsTable } from "@workspace/db";
 import {
   ListRegistrationsQueryParams,
   ListRegistrationsResponse,
@@ -13,7 +13,6 @@ import {
   RejectRegistrationResponse,
   DeleteRegistrationParams,
 } from "@workspace/api-zod";
-import { sendApprovalEmbed, sendRejectionDM } from "../lib/discord";
 import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
@@ -84,7 +83,6 @@ router.patch("/registrations/:id/approve", async (req, res): Promise<void> => {
     return;
   }
 
-  // Check seat availability
   const [tournament] = await db
     .select()
     .from(tournamentsTable)
@@ -103,23 +101,11 @@ router.patch("/registrations/:id/approve", async (req, res): Promise<void> => {
 
   const [updated] = await db
     .update(registrationsTable)
-    .set({ status: "approved" })
+    .set({ status: "approved", notificationSent: false })
     .where(eq(registrationsTable.id, params.data.id))
     .returning();
 
-  // Send Discord announcement embed
-  try {
-    if (tournament) {
-      const questions = await db
-        .select()
-        .from(questionsTable)
-        .where(eq(questionsTable.tournamentId, existing.tournamentId))
-        .orderBy(questionsTable.order);
-      await sendApprovalEmbed(updated, tournament, questions);
-    }
-  } catch (err) {
-    logger.warn({ err }, "Failed to send Discord approval embed");
-  }
+  logger.info({ regId: updated.id }, "Registration approved — bot will send notification");
 
   res.json(ApproveRegistrationResponse.parse(mapReg(updated)));
 });
@@ -149,22 +135,11 @@ router.patch("/registrations/:id/reject", async (req, res): Promise<void> => {
 
   const [updated] = await db
     .update(registrationsTable)
-    .set({ status: "rejected", rejectionReason: parsed.data.reason ?? null })
+    .set({ status: "rejected", rejectionReason: parsed.data.reason ?? null, notificationSent: false })
     .where(eq(registrationsTable.id, params.data.id))
     .returning();
 
-  // Send rejection DM
-  try {
-    const [tournament] = await db
-      .select()
-      .from(tournamentsTable)
-      .where(eq(tournamentsTable.id, existing.tournamentId));
-    if (tournament) {
-      await sendRejectionDM(updated.discordUserId, tournament.name, parsed.data.reason ?? null);
-    }
-  } catch (err) {
-    logger.warn({ err }, "Failed to send Discord rejection DM");
-  }
+  logger.info({ regId: updated.id }, "Registration rejected — bot will send DM notification");
 
   res.json(RejectRegistrationResponse.parse(mapReg(updated)));
 });

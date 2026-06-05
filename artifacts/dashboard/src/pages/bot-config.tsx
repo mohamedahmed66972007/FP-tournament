@@ -11,14 +11,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Bot, Save, Server, Hash, KeyRound } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Bot, Save, Server, Hash, Info } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useEffect } from "react";
 
 const configSchema = z.object({
   guildId: z.string().min(1, "ID السيرفر مطلوب"),
   announcementChannelId: z.string().min(1, "ID القناة مطلوب"),
-  botToken: z.string().optional(),
 });
 
 export default function BotConfig() {
@@ -46,7 +46,6 @@ export default function BotConfig() {
     defaultValues: {
       guildId: "",
       announcementChannelId: "",
-      botToken: "",
     },
   });
 
@@ -55,7 +54,6 @@ export default function BotConfig() {
       form.reset({
         guildId: config.guildId || "",
         announcementChannelId: config.announcementChannelId || "",
-        botToken: "",
       });
     }
   }, [config, form]);
@@ -65,12 +63,9 @@ export default function BotConfig() {
       data: {
         guildId: values.guildId,
         announcementChannelId: values.announcementChannelId,
-        ...(values.botToken ? { botToken: values.botToken } : {}),
       }
     });
   }
-
-  const isBotTokenSaved = config?.botToken === "***";
 
   return (
     <div className="space-y-6 max-w-2xl">
@@ -79,56 +74,29 @@ export default function BotConfig() {
         <p className="text-muted-foreground">اربط البوت بسيرفر Discord الخاص بك.</p>
       </div>
 
+      <Alert>
+        <Info className="h-4 w-4" />
+        <AlertDescription className="text-sm leading-relaxed">
+          <strong>البوت الآن مستقل تماماً عن لوحة التحكم.</strong>
+          <br />
+          توكن البوت يُضبط عبر متغير البيئة <code className="bg-muted px-1 rounded text-xs">DISCORD_BOT_TOKEN</code> مباشرةً على السيرفر الذي يشغّل البوت، وليس من هنا.
+          البوت يعمل 24/7 بشكل مستقل ويرسل إشعارات القبول والرفض تلقائياً من قاعدة البيانات.
+        </AlertDescription>
+      </Alert>
+
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Bot className="h-5 w-5 text-primary" />
-            إعدادات الاتصال
+            إعدادات Discord
           </CardTitle>
           <CardDescription>
-            هذه المعرّفات ضرورية لكي يعمل البوت ويرسل الإعلانات في القناة الصحيحة.
+            هذه المعرّفات ضرورية لإرسال إعلانات القبول في القناة الصحيحة.
           </CardDescription>
         </CardHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)}>
             <CardContent className="space-y-6">
-              <div className="p-4 bg-muted rounded-lg flex items-center justify-between border">
-                <div className="flex items-center gap-3">
-                  <div className={`h-3 w-3 rounded-full ${isBotTokenSaved ? "bg-green-500" : "bg-yellow-500 animate-pulse"}`} />
-                  <span className="font-medium">
-                    {isBotTokenSaved ? "البوت مُعدَّل بنجاح" : "يحتاج إلى إعداد"}
-                  </span>
-                </div>
-                <span className="text-sm text-muted-foreground">الحالة</span>
-              </div>
-
-              <FormField
-                control={form.control}
-                name="botToken"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="flex items-center gap-2">
-                      <KeyRound className="h-4 w-4" />
-                      توكن البوت (Bot Token)
-                    </FormLabel>
-                    <FormControl>
-                      <Input
-                        type="password"
-                        placeholder={isBotTokenSaved ? "••••••••••••••••••••••••• (محفوظ)" : "أدخل توكن البوت هنا"}
-                        {...field}
-                        data-testid="input-bot-token"
-                      />
-                    </FormControl>
-                    <p className="text-[0.8rem] text-muted-foreground mt-1">
-                      {isBotTokenSaved
-                        ? "التوكن محفوظ. أدخل توكن جديد فقط إذا أردت تغييره."
-                        : "أدخل توكن البوت من Discord Developer Portal."}
-                    </p>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
               <FormField
                 control={form.control}
                 name="guildId"

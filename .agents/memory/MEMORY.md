@@ -1,0 +1,1 @@
+- [Bot-API separation](bot-api-separation.md) — Bot is decoupled from API; communicates via DB polling only (notificationSent + pending_announcements).
