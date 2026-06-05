@@ -1,6 +1,8 @@
-import express, { type Express } from "express";
+import express, { type Express, type Request, type Response } from "express";
 import cors from "cors";
 import pinoHttp from "pino-http";
+import path from "path";
+import { existsSync } from "fs";
 import router from "./routes";
 import { logger } from "./lib/logger";
 
@@ -30,5 +32,13 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 app.use("/api", router);
+
+const dashboardDist = path.resolve(process.cwd(), "artifacts/dashboard/dist/public");
+if (existsSync(dashboardDist)) {
+  app.use(express.static(dashboardDist));
+  app.get("*", (_req: Request, res: Response) => {
+    res.sendFile(path.join(dashboardDist, "index.html"));
+  });
+}
 
 export default app;
