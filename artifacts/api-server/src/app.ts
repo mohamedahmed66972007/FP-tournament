@@ -2,6 +2,7 @@ import express, { type Express, type Request, type Response } from "express";
 import cors from "cors";
 import pinoHttp from "pino-http";
 import path from "path";
+import { fileURLToPath } from "url";
 import { existsSync } from "fs";
 import router from "./routes";
 import { logger } from "./lib/logger";
@@ -33,11 +34,27 @@ app.use(express.urlencoded({ extended: true }));
 
 app.use("/api", router);
 
-const dashboardDist = path.resolve(process.cwd(), "artifacts/dashboard/dist/public");
+// Resolve dashboard dist relative to this compiled file's location.
+// In the bundle: artifacts/api-server/dist/index.mjs
+// Dashboard is at: artifacts/dashboard/dist/public
+// Using fileURLToPath for ESM compatibility; falls back to __dirname in CJS/banner context.
+const _currentDir: string =
+  typeof __dirname !== "undefined"
+    ? __dirname
+    : path.dirname(fileURLToPath(import.meta.url));
+
+const dashboardDist = path.resolve(_currentDir, "../../dashboard/dist/public");
+
 if (existsSync(dashboardDist)) {
+  logger.info({ dashboardDist }, "Serving dashboard static files");
   app.use(express.static(dashboardDist));
-  app.get("*", (_req: Request, res: Response) => {
+  app.get(/(.*)/, (_req: Request, res: Response) => {
     res.sendFile(path.join(dashboardDist, "index.html"));
+  });
+} else {
+  logger.warn({ dashboardDist }, "Dashboard dist not found — serving API only");
+  app.get("/", (_req: Request, res: Response) => {
+    res.json({ status: "ok", service: "api-server" });
   });
 }
 
