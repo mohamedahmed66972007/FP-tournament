@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { logger } from "./logger.js";
 import { initDiscordBot } from "./bot.js";
 import { startNotificationPoller } from "./notifications.js";
