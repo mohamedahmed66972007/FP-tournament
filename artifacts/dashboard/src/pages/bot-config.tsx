@@ -74,16 +74,6 @@ export default function BotConfig() {
         <p className="text-muted-foreground">اربط البوت بسيرفر Discord الخاص بك.</p>
       </div>
 
-      <Alert>
-        <Info className="h-4 w-4" />
-        <AlertDescription className="text-sm leading-relaxed">
-          <strong>البوت الآن مستقل تماماً عن لوحة التحكم.</strong>
-          <br />
-          توكن البوت يُضبط عبر متغير البيئة <code className="bg-muted px-1 rounded text-xs">DISCORD_BOT_TOKEN</code> مباشرةً على السيرفر الذي يشغّل البوت، وليس من هنا.
-          البوت يعمل 24/7 بشكل مستقل ويرسل إشعارات القبول والرفض تلقائياً من قاعدة البيانات.
-        </AlertDescription>
-      </Alert>
-
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -91,7 +81,6 @@ export default function BotConfig() {
             إعدادات Discord
           </CardTitle>
           <CardDescription>
-            هذه المعرّفات ضرورية لإرسال إعلانات القبول في القناة الصحيحة.
           </CardDescription>
         </CardHeader>
         <Form {...form}>
