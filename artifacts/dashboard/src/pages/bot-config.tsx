@@ -208,15 +208,6 @@ export default function BotConfig() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <Alert>
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription className="text-sm leading-relaxed">
-              <strong>الخطوات:</strong> أدخل الرابط الجديد ← اختبر الاتصال ← اضغط ترحيل.
-              بعد الترحيل حدّث <code className="bg-muted px-1 rounded text-xs">DATABASE_URL</code> في{" "}
-              <code className="bg-muted px-1 rounded text-xs">.env</code> بـ wispbyte ثم أعد تشغيل البوت.
-            </AlertDescription>
-          </Alert>
-
           <Form {...dbForm}>
             <div className="space-y-3">
               <FormField
