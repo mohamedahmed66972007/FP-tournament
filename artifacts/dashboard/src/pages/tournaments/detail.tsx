@@ -25,7 +25,7 @@ import { ArrowRight, Plus, Trash2, GripVertical, Pencil, Save } from "lucide-rea
 import { useToast } from "@/hooks/use-toast";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
-import { QuestionInputType } from "@workspace/api-client-react/src/generated/api.schemas";
+import { QuestionInputType } from "@workspace/api-client-react";
 
 const questionTypeLabels: Record<string, string> = {
   text: "نص قصير",

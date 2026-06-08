@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { eq, and } from "drizzle-orm";
 import { db, registrationsTable, tournamentsTable } from "@workspace/db";
+import { sendApprovalEmbed, sendRejectionDM } from "../lib/discordNotifier";
 import {
   ListRegistrationsQueryParams,
   ListRegistrationsResponse,
@@ -101,13 +102,17 @@ router.patch("/registrations/:id/approve", async (req, res): Promise<void> => {
 
   const [updated] = await db
     .update(registrationsTable)
-    .set({ status: "approved", notificationSent: false })
+    .set({ status: "approved", notificationSent: true })
     .where(eq(registrationsTable.id, params.data.id))
     .returning();
 
-  logger.info({ regId: updated.id }, "Registration approved — bot will send notification");
-
   res.json(ApproveRegistrationResponse.parse(mapReg(updated)));
+
+  if (tournament) {
+    sendApprovalEmbed(updated, tournament).catch((err) =>
+      logger.error({ err, regId: updated.id }, "Failed to send approval embed")
+    );
+  }
 });
 
 router.patch("/registrations/:id/reject", async (req, res): Promise<void> => {
@@ -133,15 +138,26 @@ router.patch("/registrations/:id/reject", async (req, res): Promise<void> => {
     return;
   }
 
+  const [tournament] = await db
+    .select()
+    .from(tournamentsTable)
+    .where(eq(tournamentsTable.id, existing.tournamentId));
+
   const [updated] = await db
     .update(registrationsTable)
-    .set({ status: "rejected", rejectionReason: parsed.data.reason ?? null, notificationSent: false })
+    .set({ status: "rejected", rejectionReason: parsed.data.reason ?? null, notificationSent: true })
     .where(eq(registrationsTable.id, params.data.id))
     .returning();
 
-  logger.info({ regId: updated.id }, "Registration rejected — bot will send DM notification");
-
   res.json(RejectRegistrationResponse.parse(mapReg(updated)));
+
+  sendRejectionDM(
+    updated.discordUserId,
+    tournament?.name ?? "البطولة",
+    updated.rejectionReason ?? null
+  ).catch((err) =>
+    logger.error({ err, regId: updated.id }, "Failed to send rejection DM")
+  );
 });
 
 router.delete("/registrations/:id", async (req, res): Promise<void> => {

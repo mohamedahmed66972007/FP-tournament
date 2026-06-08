@@ -23,3 +23,4 @@ export async function switchDatabase(newUrl: string): Promise<void> {
 export * from "./schema";
 export { testDatabaseConnection, migrateToDatabase } from "./migrator";
 export type { MigrationResult } from "./migrator";
+export { eq, ne, and, or, sql, count, inArray, isNull, isNotNull, asc, desc, gt, gte, lt, lte } from "drizzle-orm";

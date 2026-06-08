@@ -1,7 +1,6 @@
 import "dotenv/config";
 import { logger } from "./logger.js";
 import { initDiscordBot } from "./bot.js";
-import { startNotificationPoller } from "./notifications.js";
 
 if (!process.env.DATABASE_URL) {
   logger.error("DATABASE_URL is required");
@@ -16,4 +15,4 @@ if (!process.env.DISCORD_BOT_TOKEN) {
 logger.info("Starting Discord bot...");
 
 await initDiscordBot();
-startNotificationPoller();
+// Notification polling removed — API server sends Discord notifications directly on approve/reject

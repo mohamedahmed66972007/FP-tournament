@@ -33,52 +33,49 @@
 - `artifacts/discord-bot/src/` — Standalone Discord bot (bot.ts + notifications.ts)
 - `artifacts/dashboard/src/` — React frontend
 
-## Architecture — Separated Bot & API
-
-The Discord bot is fully decoupled from the API server and dashboard:
+## Architecture — Separated Bot & API (event-driven, no polling)
 
 ```
 Discord Bot (artifacts/discord-bot)         ← runs on separate 24/7 server
   ├── DISCORD_BOT_TOKEN from env only
   ├── Direct DB connection (DATABASE_URL)
   ├── Handles /tournament command + registration flow
-  ├── Saves registrations to DB immediately
-  └── Polls DB every 5s:
-        • registrations (status != pending AND notificationSent = false)
-          → sends approval embed or rejection DM → marks notificationSent = true
-        • pending_announcements table
-          → posts tournament embed in channel → deletes row
+  └── Saves registrations to DB — that's it, no polling
 
 API Server (artifacts/api-server)           ← stateless REST API
   ├── CRUD for tournaments, registrations, questions
-  ├── Approve/reject: updates DB only (notificationSent = false)
-  ├── Send announcement: inserts into pending_announcements
-  └── NO Discord code — bot is completely independent
+  ├── Approve: updates DB → sends Discord embed directly via REST API
+  ├── Reject: updates DB → sends Discord DM directly via REST API
+  ├── Send announcement: sends Discord embed directly via REST API
+  └── discordNotifier.ts — reads token from env or DB bot_config.botToken
 
 Dashboard (artifacts/dashboard)             ← can restart without affecting bot
   ├── Reads all data from API/DB
-  ├── Bot config page: only guildId + announcementChannelId (no token)
-  └── Token is env var on bot server only
+  ├── Bot config page: guildId + announcementChannelId + botToken (write-only field)
+  └── Bot token stored in DB (used by API); also stays as env var on bot server
 ```
 
 ## Key DB Tables
 
-- `registrations.notificationSent` — false until bot sends approval embed / rejection DM
-- `pending_announcements` — queued tournament announcements for the bot to post
+- `registrations.notificationSent` — set true immediately by API after sending Discord notification
+- `pending_announcements` — legacy table; no longer used (bot no longer polls it)
+- `bot_config.botToken` — stored by dashboard UI, used by API server to call Discord REST
 
 ## Architecture decisions
 
-- Bot and API share the same `DATABASE_URL` — only way they communicate
+- Bot and API share the same `DATABASE_URL`
 - Only one tournament can be active at a time — activating one auto-deactivates others
 - Discord modals support max 5 fields — questions beyond 5 are silently ignored in the bot modal
 - Approval sends an embed to the configured announcement channel; rejection sends a DM
-- Bot token is NEVER stored in DB or passed through dashboard — env var only
-- Bot polling interval: 5 seconds (configurable via code)
+- Bot token stored in DB (for API use) AND as env var on bot server (for gateway connection)
+- API sends Discord notifications directly using Discord REST API (fetch, no discord.js)
+- GET /bot/config always returns `botToken: null` — write-only, never exposed via API
+- DB uses `@neondatabase/serverless` neon-http driver — auto-suspends between queries
 
 ## Deployment
 
-- **API Server**: Deploy with `DATABASE_URL` env var. No Discord env var needed.
-- **Discord Bot**: Deploy separately with both `DATABASE_URL` AND `DISCORD_BOT_TOKEN`. Must be 24/7.
+- **API Server**: Deploy with `DATABASE_URL`. Add `DISCORD_BOT_TOKEN` as env var OR save it via dashboard bot-config page.
+- **Discord Bot**: Deploy separately with both `DATABASE_URL` AND `DISCORD_BOT_TOKEN`. Must be 24/7. No polling code runs.
 - **Dashboard**: Deploy as a static site or Vite SSR. Connects to API server only.
 
 ## User preferences
@@ -91,7 +88,9 @@ _Populate as you build — explicit user instructions worth remembering across s
 - Run `pnpm --filter @workspace/api-spec run codegen` after any openapi.yaml change
 - Discord modals are limited to 5 text inputs maximum
 - The `ready` event is deprecated in discord.js v14 — use `clientReady` in future versions
-- Bot only reads `announcementChannelId` from `bot_config` table; token is env var only
+- Bot only reads `announcementChannelId` from `bot_config` table; token is env var only (on bot server)
+- API server reads bot token from env `DISCORD_BOT_TOKEN` first, then falls back to `bot_config.botToken` in DB
+- `discordNotifier.ts` uses Discord REST API v10 with Node.js built-in fetch — no discord.js in API server
 
 ## Pointers
 

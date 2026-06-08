@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { eq, sql, count } from "drizzle-orm";
-import { db, tournamentsTable, registrationsTable, questionsTable, pendingAnnouncementsTable } from "@workspace/db";
+import { db, tournamentsTable, registrationsTable, questionsTable } from "@workspace/db";
+import { sendAnnouncementEmbed } from "../lib/discordNotifier";
 import {
   ListTournamentsResponse,
   CreateTournamentBody,
@@ -271,9 +272,11 @@ router.post("/tournaments/:id/send-registration-message", async (req, res): Prom
     return;
   }
 
-  await db.insert(pendingAnnouncementsTable).values({ tournamentId: id, channelId });
-  logger.info({ tournamentId: id, channelId }, "Announcement queued — bot will post it shortly");
   res.json({ success: true });
+
+  sendAnnouncementEmbed(t, channelId).catch((err) =>
+    logger.error({ err, tournamentId: id, channelId }, "Failed to send announcement embed")
+  );
 });
 
 export default router;

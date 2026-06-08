@@ -19,7 +19,7 @@ import {
   EmbedBuilder,
 } from "discord.js";
 import { db, tournamentsTable, questionsTable, registrationsTable } from "@workspace/db";
-import { eq, count, sql } from "drizzle-orm";
+import { eq, count, sql } from "@workspace/db";
 import { logger } from "./logger.js";
 
 let client: Client | null = null;

@@ -12,13 +12,14 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Bot, Save, Server, Hash, Database, CheckCircle2, AlertCircle, Loader2, ArrowRightLeft } from "lucide-react";
+import { Bot, Save, Server, Hash, Database, CheckCircle2, AlertCircle, Loader2, ArrowRightLeft, KeyRound } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useEffect, useState } from "react";
 
 const configSchema = z.object({
   guildId: z.string().min(1, "ID السيرفر مطلوب"),
   announcementChannelId: z.string().min(1, "ID القناة مطلوب"),
+  botToken: z.string().optional(),
 });
 
 const dbSchema = z.object({
@@ -50,7 +51,7 @@ export default function BotConfig() {
 
   const form = useForm<z.infer<typeof configSchema>>({
     resolver: zodResolver(configSchema),
-    defaultValues: { guildId: "", announcementChannelId: "" },
+    defaultValues: { guildId: "", announcementChannelId: "", botToken: "" },
   });
 
   const dbForm = useForm<z.infer<typeof dbSchema>>({
@@ -75,7 +76,11 @@ export default function BotConfig() {
 
   function onSubmit(values: z.infer<typeof configSchema>) {
     updateMutation.mutate({
-      data: { guildId: values.guildId, announcementChannelId: values.announcementChannelId }
+      data: {
+        guildId: values.guildId,
+        announcementChannelId: values.announcementChannelId,
+        ...(values.botToken ? { botToken: values.botToken } : {}),
+      }
     });
   }
 
@@ -180,6 +185,32 @@ export default function BotConfig() {
                     </FormControl>
                     <p className="text-[0.8rem] text-muted-foreground mt-2">
                       القناة التي سيرسل فيها البوت إعلانات القبول.
+                    </p>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="botToken"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>توكن البوت (Bot Token)</FormLabel>
+                    <FormControl>
+                      <div className="relative">
+                        <KeyRound className="absolute right-3 top-3 h-4 w-4 text-muted-foreground" />
+                        <Input
+                          className="pr-9 font-mono text-sm"
+                          type="password"
+                          placeholder="اتركه فارغاً لعدم التغيير"
+                          autoComplete="new-password"
+                          {...field}
+                          data-testid="input-bot-token"
+                        />
+                      </div>
+                    </FormControl>
+                    <p className="text-[0.8rem] text-muted-foreground mt-2">
+                      يُستخدم لإرسال إشعارات Discord مباشرةً من الداشبورد. يُحفظ مشفراً ولن يظهر مجدداً.
                     </p>
                     <FormMessage />
                   </FormItem>

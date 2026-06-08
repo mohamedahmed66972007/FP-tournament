@@ -22,7 +22,7 @@ import { Badge } from "@/components/ui/badge";
 import { Settings, Trash2, Plus, Play, Pause } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
-import { TournamentInputType } from "@workspace/api-client-react/src/generated/api.schemas";
+import { TournamentInputType } from "@workspace/api-client-react";
 
 const typeLabels: Record<string, string> = {
   solo: "سولو",

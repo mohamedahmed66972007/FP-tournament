@@ -38,6 +38,7 @@ router.patch("/bot/config", async (req, res): Promise<void> => {
   const updateData: Record<string, any> = {};
   if (parsed.data.announcementChannelId !== undefined) updateData.announcementChannelId = parsed.data.announcementChannelId;
   if (parsed.data.guildId !== undefined) updateData.guildId = parsed.data.guildId;
+  if (parsed.data.botToken) updateData.botToken = parsed.data.botToken;
 
   const [updated] = await db
     .update(botConfigTable)

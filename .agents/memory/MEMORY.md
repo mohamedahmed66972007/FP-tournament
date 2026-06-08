@@ -1,1 +1,2 @@
-- [Bot-API separation](bot-api-separation.md) — Bot is decoupled from API; communicates via DB polling only (notificationSent + pending_announcements).
+- [Bot-API separation](bot-api-separation.md) — API sends Discord notifications directly via REST on approve/reject/announce; bot has no polling, only handles registrations.
+- [Drizzle-orm version conflict fix](drizzle-version-fix.md) — discord-bot must NOT have its own drizzle-orm dep; import eq/sql/count from @workspace/db instead.
