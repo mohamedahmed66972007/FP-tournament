@@ -179,10 +179,12 @@ async function processAnnouncements(client: Client) {
 }
 
 // ──────────────────────────────────────────────────────────────
-// Start the poller (every 5 seconds)
+// Start the poller (every 5 minutes — DB sleeps between polls)
 // ──────────────────────────────────────────────────────────────
+const POLL_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+
 export function startNotificationPoller() {
-  logger.info("Notification poller started (5s interval)");
+  logger.info("Notification poller started (5min interval)");
 
   setInterval(async () => {
     const client = getClient();
@@ -194,5 +196,5 @@ export function startNotificationPoller() {
     await processAnnouncements(client).catch((err) =>
       logger.error({ err }, "Announcement poller error")
     );
-  }, 5000);
+  }, POLL_INTERVAL_MS);
 }

@@ -1,8 +1,6 @@
-import { drizzle } from "drizzle-orm/node-postgres";
-import pg from "pg";
+import { neon } from "@neondatabase/serverless";
+import { drizzle } from "drizzle-orm/neon-http";
 import * as schema from "./schema";
-
-const { Pool } = pg;
 
 const connectionString = process.env.NEON_DATABASE_URL ?? process.env.DATABASE_URL;
 
@@ -12,18 +10,14 @@ if (!connectionString) {
   );
 }
 
-export let pool = new Pool({ connectionString });
-export let db = drizzle(pool, { schema });
+export let db = drizzle(neon(connectionString), { schema });
 
 /**
  * Switch the runtime database connection to a new URL.
- * All subsequent queries will use the new connection.
+ * Uses HTTP driver — no persistent connections, DB can sleep between queries.
  */
 export async function switchDatabase(newUrl: string): Promise<void> {
-  const oldPool = pool;
-  pool = new Pool({ connectionString: newUrl });
-  db = drizzle(pool, { schema });
-  setTimeout(() => oldPool.end().catch(() => {}), 2000);
+  db = drizzle(neon(newUrl), { schema });
 }
 
 export * from "./schema";
