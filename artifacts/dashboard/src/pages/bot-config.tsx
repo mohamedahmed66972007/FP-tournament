@@ -12,14 +12,21 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Bot, Save, Server, Hash, Info } from "lucide-react";
+import { Bot, Save, Server, Hash, Database, CheckCircle2, AlertCircle, Loader2, ArrowRightLeft } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 const configSchema = z.object({
   guildId: z.string().min(1, "ID السيرفر مطلوب"),
   announcementChannelId: z.string().min(1, "ID القناة مطلوب"),
 });
+
+const dbSchema = z.object({
+  newDatabaseUrl: z.string().min(10, "الرابط مطلوب"),
+});
+
+type DbTestStatus = "idle" | "testing" | "success" | "error";
+type MigrateStatus = "idle" | "migrating" | "success" | "error";
 
 export default function BotConfig() {
   const { toast } = useToast();
@@ -43,11 +50,19 @@ export default function BotConfig() {
 
   const form = useForm<z.infer<typeof configSchema>>({
     resolver: zodResolver(configSchema),
-    defaultValues: {
-      guildId: "",
-      announcementChannelId: "",
-    },
+    defaultValues: { guildId: "", announcementChannelId: "" },
   });
+
+  const dbForm = useForm<z.infer<typeof dbSchema>>({
+    resolver: zodResolver(dbSchema),
+    defaultValues: { newDatabaseUrl: "" },
+  });
+
+  const [testStatus, setTestStatus] = useState<DbTestStatus>("idle");
+  const [testError, setTestError] = useState("");
+  const [migrateStatus, setMigrateStatus] = useState<MigrateStatus>("idle");
+  const [migrateError, setMigrateError] = useState("");
+  const [migrateResult, setMigrateResult] = useState<Record<string, number> | null>(null);
 
   useEffect(() => {
     if (config) {
@@ -60,20 +75,68 @@ export default function BotConfig() {
 
   function onSubmit(values: z.infer<typeof configSchema>) {
     updateMutation.mutate({
-      data: {
-        guildId: values.guildId,
-        announcementChannelId: values.announcementChannelId,
-      }
+      data: { guildId: values.guildId, announcementChannelId: values.announcementChannelId }
     });
+  }
+
+  function handleDbUrlChange() {
+    setTestStatus("idle");
+    setMigrateStatus("idle");
+    setMigrateResult(null);
+    setTestError("");
+    setMigrateError("");
+  }
+
+  async function handleTestConnection() {
+    const url = dbForm.getValues("newDatabaseUrl");
+    if (!url) { dbForm.setError("newDatabaseUrl", { message: "أدخل الرابط أولاً" }); return; }
+    setTestStatus("testing"); setTestError("");
+    try {
+      const res = await fetch("/api/database/test-connection", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ newDatabaseUrl: url }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setTestStatus("error"); setTestError(data.error || "فشل الاتصال"); return; }
+      setTestStatus("success");
+    } catch {
+      setTestStatus("error"); setTestError("تعذر الاتصال بالخادم");
+    }
+  }
+
+  async function handleMigrate() {
+    const url = dbForm.getValues("newDatabaseUrl");
+    if (!url) { dbForm.setError("newDatabaseUrl", { message: "أدخل الرابط أولاً" }); return; }
+    if (testStatus !== "success") {
+      toast({ title: "اختبر الاتصال أولاً قبل الترحيل", variant: "destructive" });
+      return;
+    }
+    setMigrateStatus("migrating"); setMigrateError(""); setMigrateResult(null);
+    try {
+      const res = await fetch("/api/database/migrate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ newDatabaseUrl: url }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setMigrateStatus("error"); setMigrateError(data.error || "فشل الترحيل"); return; }
+      setMigrateStatus("success");
+      setMigrateResult(data.migrated);
+      toast({ title: "تم الترحيل بنجاح ✅" });
+    } catch {
+      setMigrateStatus("error"); setMigrateError("تعذر الاتصال بالخادم");
+    }
   }
 
   return (
     <div className="space-y-6 max-w-2xl">
       <div>
         <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">إعدادات البوت</h1>
-        <p className="text-muted-foreground">اربط البوت بسيرفر Discord الخاص بك.</p>
+        <p className="text-muted-foreground">اربط البوت بسيرفر Discord وأدر قاعدة البيانات.</p>
       </div>
 
+      {/* Discord Settings */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -81,6 +144,7 @@ export default function BotConfig() {
             إعدادات Discord
           </CardTitle>
           <CardDescription>
+            معرّفات السيرفر والقناة التي يستخدمها البوت.
           </CardDescription>
         </CardHeader>
         <Form {...form}>
@@ -102,7 +166,6 @@ export default function BotConfig() {
                   </FormItem>
                 )}
               />
-
               <FormField
                 control={form.control}
                 name="announcementChannelId"
@@ -131,6 +194,116 @@ export default function BotConfig() {
             </CardFooter>
           </form>
         </Form>
+      </Card>
+
+      {/* Database Migration Card */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Database className="h-5 w-5 text-primary" />
+            ترحيل قاعدة البيانات
+          </CardTitle>
+          <CardDescription>
+            غيّر رابط Neon وسيتم نقل جميع البيانات تلقائياً إلى قاعدة البيانات الجديدة.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <Alert>
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription className="text-sm leading-relaxed">
+              <strong>الخطوات:</strong> أدخل الرابط الجديد ← اختبر الاتصال ← اضغط ترحيل.
+              بعد الترحيل حدّث <code className="bg-muted px-1 rounded text-xs">DATABASE_URL</code> في{" "}
+              <code className="bg-muted px-1 rounded text-xs">.env</code> بـ wispbyte ثم أعد تشغيل البوت.
+            </AlertDescription>
+          </Alert>
+
+          <Form {...dbForm}>
+            <div className="space-y-3">
+              <FormField
+                control={dbForm.control}
+                name="newDatabaseUrl"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>رابط قاعدة البيانات الجديدة</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="password"
+                        placeholder="postgresql://user:pass@host/db?sslmode=require"
+                        {...field}
+                        onChange={(e) => { field.onChange(e); handleDbUrlChange(); }}
+                        className="font-mono text-sm"
+                        autoComplete="off"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {testStatus === "success" && (
+                <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400">
+                  <CheckCircle2 className="h-4 w-4" />
+                  الاتصال نجح — يمكنك الترحيل الآن
+                </div>
+              )}
+              {testStatus === "error" && (
+                <div className="flex items-center gap-2 text-sm text-destructive">
+                  <AlertCircle className="h-4 w-4" />
+                  {testError}
+                </div>
+              )}
+
+              {migrateStatus === "success" && migrateResult && (
+                <Alert className="border-green-500/50 bg-green-500/10">
+                  <CheckCircle2 className="h-4 w-4 text-green-600" />
+                  <AlertDescription className="text-sm space-y-1">
+                    <p className="font-semibold text-green-700 dark:text-green-400">تم الترحيل بنجاح ✅</p>
+                    <ul className="text-muted-foreground space-y-0.5 mt-1 text-xs">
+                      <li>• البطولات: {migrateResult.tournaments}</li>
+                      <li>• الأسئلة: {migrateResult.questions}</li>
+                      <li>• التسجيلات: {migrateResult.registrations}</li>
+                      <li>• الإعدادات: {migrateResult.botConfig}</li>
+                    </ul>
+                    <p className="mt-2 font-medium text-amber-600 dark:text-amber-400 text-xs">
+                      ⚠️ حدّث <code className="bg-muted px-1 rounded">.env</code> في wispbyte بنفس الرابط ثم أعد تشغيل البوت.
+                    </p>
+                  </AlertDescription>
+                </Alert>
+              )}
+              {migrateStatus === "error" && (
+                <div className="flex items-center gap-2 text-sm text-destructive">
+                  <AlertCircle className="h-4 w-4" />
+                  {migrateError}
+                </div>
+              )}
+
+              <div className="flex gap-3 pt-1">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleTestConnection}
+                  disabled={testStatus === "testing" || migrateStatus === "migrating"}
+                >
+                  {testStatus === "testing"
+                    ? <><Loader2 className="ml-2 h-4 w-4 animate-spin" />جاري الاختبار...</>
+                    : <><Database className="ml-2 h-4 w-4" />اختبار الاتصال</>}
+                </Button>
+
+                <Button
+                  type="button"
+                  onClick={handleMigrate}
+                  disabled={testStatus !== "success" || migrateStatus === "migrating" || migrateStatus === "success"}
+                >
+                  {migrateStatus === "migrating"
+                    ? <><Loader2 className="ml-2 h-4 w-4 animate-spin" />جاري الترحيل...</>
+                    : migrateStatus === "success"
+                    ? <><CheckCircle2 className="ml-2 h-4 w-4" />تم الترحيل</>
+                    : <><ArrowRightLeft className="ml-2 h-4 w-4" />ترحيل البيانات</>}
+                </Button>
+              </div>
+            </div>
+          </Form>
+        </CardContent>
       </Card>
     </div>
   );

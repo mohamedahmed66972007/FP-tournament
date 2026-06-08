@@ -12,7 +12,20 @@ if (!connectionString) {
   );
 }
 
-export const pool = new Pool({ connectionString });
-export const db = drizzle(pool, { schema });
+export let pool = new Pool({ connectionString });
+export let db = drizzle(pool, { schema });
+
+/**
+ * Switch the runtime database connection to a new URL.
+ * All subsequent queries will use the new connection.
+ */
+export async function switchDatabase(newUrl: string): Promise<void> {
+  const oldPool = pool;
+  pool = new Pool({ connectionString: newUrl });
+  db = drizzle(pool, { schema });
+  setTimeout(() => oldPool.end().catch(() => {}), 2000);
+}
 
 export * from "./schema";
+export { testDatabaseConnection, migrateToDatabase } from "./migrator";
+export type { MigrationResult } from "./migrator";
