@@ -204,7 +204,6 @@ export default function BotConfig() {
             ترحيل قاعدة البيانات
           </CardTitle>
           <CardDescription>
-            غيّر رابط Neon وسيتم نقل جميع البيانات تلقائياً إلى قاعدة البيانات الجديدة.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
