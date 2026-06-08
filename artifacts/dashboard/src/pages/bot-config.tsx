@@ -202,7 +202,7 @@ export default function BotConfig() {
                         <Input
                           className="pr-9 font-mono text-sm"
                           type="password"
-                          placeholder="اتركه فارغاً لعدم التغيير"
+                          placeholder="هنا تحط التوكن يمعلم"
                           autoComplete="new-password"
                           {...field}
                           data-testid="input-bot-token"
@@ -210,7 +210,6 @@ export default function BotConfig() {
                       </div>
                     </FormControl>
                     <p className="text-[0.8rem] text-muted-foreground mt-2">
-                      يُستخدم لإرسال إشعارات Discord مباشرةً من الداشبورد. يُحفظ مشفراً ولن يظهر مجدداً.
                     </p>
                     <FormMessage />
                   </FormItem>
