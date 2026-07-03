@@ -30,9 +30,10 @@ function readCachedUrl(): string | null {
 }
 
 function writeCachedUrl(url: string): void {
-  // Atomic write: write to a temp file first, then rename into place.
-  // This prevents partial/corrupt writes on crash mid-write.
-  const tmp = join(tmpdir(), `.fp-tournament-db-url.${process.pid}.tmp`);
+  // Atomic write: write to a temp file in the SAME directory, then rename into place.
+  // Must use same filesystem as destination to avoid EXDEV (cross-device rename).
+  const dir = homedir();
+  const tmp = join(dir, `.fp-tournament-db-url.${process.pid}.tmp`);
   try {
     writeFileSync(tmp, url, { encoding: "utf-8", mode: 0o600 });
     renameSync(tmp, DB_URL_CACHE);

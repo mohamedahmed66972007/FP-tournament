@@ -1,10 +1,12 @@
 import { Fragment, useState, useMemo } from "react";
 import {
   useListRegistrations,
+  useListTournaments,
   useApproveRegistration,
   useRejectRegistration,
   useDeleteRegistration,
-  getListRegistrationsQueryKey
+  getListRegistrationsQueryKey,
+  getListTournamentsQueryKey
 } from "@workspace/api-client-react";
 import { useQueryClient, useQueries } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -13,7 +15,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { CheckCircle2, XCircle, ChevronDown, ChevronUp, Trash2 } from "lucide-react";
+import { CheckCircle2, XCircle, ChevronDown, ChevronUp, Trash2, Trophy } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { Textarea } from "@/components/ui/textarea";
@@ -78,6 +80,7 @@ export default function Registrations() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [tournamentFilter, setTournamentFilter] = useState<string>("all");
   const [expandedRows, setExpandedRows] = useState<Record<number, boolean>>({});
 
   const [rejectDialogState, setRejectDialogState] = useState<{
@@ -92,11 +95,26 @@ export default function Registrations() {
     username: string;
   }>({ isOpen: false, regId: null, username: "" });
 
-  const filterParams = statusFilter !== "all" ? { status: statusFilter as any } : undefined;
+  // Fetch all tournaments for the filter dropdown
+  const { data: tournaments } = useListTournaments();
+
+  const tournamentNameMap = useMemo(() => {
+    const map: Record<number, string> = {};
+    tournaments?.forEach(t => { map[t.id] = t.name; });
+    return map;
+  }, [tournaments]);
+
+  // Build filter params
+  const filterParams = useMemo(() => {
+    const params: Record<string, any> = {};
+    if (statusFilter !== "all") params.status = statusFilter;
+    if (tournamentFilter !== "all") params.tournamentId = Number(tournamentFilter);
+    return Object.keys(params).length > 0 ? params : undefined;
+  }, [statusFilter, tournamentFilter]);
 
   const { data: registrations, isLoading } = useListRegistrations(
-    filterParams,
-    { query: { queryKey: getListRegistrationsQueryKey(filterParams) } }
+    filterParams as any,
+    { query: { queryKey: getListRegistrationsQueryKey(filterParams as any) } }
   );
 
   const invalidateAll = () =>
@@ -154,6 +172,17 @@ export default function Registrations() {
     }
   };
 
+  // Count registrations per tournament for the dropdown labels
+  const countByTournament = useMemo(() => {
+    // Use unfiltered count — fetch all regs for counting is expensive,
+    // so we just show the count within the current status filter.
+    const map: Record<number, number> = {};
+    registrations?.forEach(r => {
+      map[r.tournamentId] = (map[r.tournamentId] ?? 0) + 1;
+    });
+    return map;
+  }, [registrations]);
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -161,9 +190,26 @@ export default function Registrations() {
           <h1 className="text-3xl font-bold tracking-tight">التسجيلات</h1>
           <p className="text-muted-foreground">راجع وأدر طلبات تسجيل اللاعبين.</p>
         </div>
-        <div className="w-[200px]">
+        <div className="flex gap-2 flex-wrap justify-end">
+          {/* Tournament filter */}
+          <Select value={tournamentFilter} onValueChange={v => { setTournamentFilter(v); setExpandedRows({}); }}>
+            <SelectTrigger className="w-[220px]" data-testid="select-tournament-filter">
+              <Trophy className="h-4 w-4 ml-1 text-muted-foreground shrink-0" />
+              <SelectValue placeholder="اختر البطولة" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">جميع البطولات</SelectItem>
+              {tournaments?.map(t => (
+                <SelectItem key={t.id} value={String(t.id)}>
+                  {t.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {/* Status filter */}
           <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger data-testid="select-status-filter">
+            <SelectTrigger className="w-[160px]" data-testid="select-status-filter">
               <SelectValue placeholder="تصفية حسب الحالة" />
             </SelectTrigger>
             <SelectContent>
@@ -176,6 +222,27 @@ export default function Registrations() {
         </div>
       </div>
 
+      {/* Active tournament banner */}
+      {tournamentFilter !== "all" && tournaments && (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground bg-muted/40 border rounded-lg px-4 py-2">
+          <Trophy className="h-4 w-4 text-primary shrink-0" />
+          <span>
+            بطولة: <span className="font-semibold text-foreground">{tournamentNameMap[Number(tournamentFilter)]}</span>
+            {registrations !== undefined && (
+              <span className="mr-2">— {registrations.length} تسجيل</span>
+            )}
+          </span>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="mr-auto h-6 px-2 text-xs"
+            onClick={() => setTournamentFilter("all")}
+          >
+            عرض الكل
+          </Button>
+        </div>
+      )}
+
       <Card>
         <CardContent className="p-0">
           <Table>
@@ -183,7 +250,7 @@ export default function Registrations() {
               <TableRow>
                 <TableHead className="w-[50px]"></TableHead>
                 <TableHead>مستخدم Discord</TableHead>
-                <TableHead>رقم البطولة</TableHead>
+                <TableHead>البطولة</TableHead>
                 <TableHead>الحالة</TableHead>
                 <TableHead>التاريخ</TableHead>
                 <TableHead className="text-left">الإجراءات</TableHead>
@@ -221,7 +288,11 @@ export default function Registrations() {
                         <div className="font-medium">{reg.discordUsername}</div>
                         <div className="text-xs text-muted-foreground" data-testid={`text-discord-id-${reg.id}`}>{reg.discordUserId}</div>
                       </TableCell>
-                      <TableCell>#{reg.tournamentId}</TableCell>
+                      <TableCell>
+                        <div className="font-medium text-sm">
+                          {tournamentNameMap[reg.tournamentId] ?? `بطولة #${reg.tournamentId}`}
+                        </div>
+                      </TableCell>
                       <TableCell>{getStatusBadge(reg.status)}</TableCell>
                       <TableCell>{format(new Date(reg.createdAt), "dd/MM/yyyy HH:mm")}</TableCell>
                       <TableCell className="text-left">
