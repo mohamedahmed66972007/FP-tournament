@@ -1,2 +1,3 @@
 - [Bot-API separation](bot-api-separation.md) — API sends Discord notifications directly via REST on approve/reject/announce; bot has no polling, only handles registrations.
 - [Drizzle-orm version conflict fix](drizzle-version-fix.md) — discord-bot must NOT have its own drizzle-orm dep; import eq/sql/count from @workspace/db instead.
+- [DB URL persistence via cached file](db-url-persistence.md) — switchDatabase() persists the URL to ~/.fp-tournament-db-url (atomic, 0o600); read on startup before env vars.

@@ -82,6 +82,10 @@ Dashboard (artifacts/dashboard)             ← can restart without affecting bo
 
 _Populate as you build — explicit user instructions worth remembering across sessions._
 
+## Database URL Persistence
+
+When the user switches the database via the "ترحيل قاعدة البيانات" UI (which calls `switchDatabase()`), the new URL is written atomically to `~/.fp-tournament-db-url` with owner-read-only permissions (0o600). On the next server restart, this cached file is read first (before `NEON_DATABASE_URL`/`DATABASE_URL` env vars), so the database connection is restored automatically. If the file is deleted or corrupt, the server falls back to env vars cleanly.
+
 ## Gotchas
 
 - Run `pnpm run typecheck:libs` after any `lib/*` change before checking artifact packages
